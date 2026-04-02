@@ -1,0 +1,2089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ooze Battle - Online</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+    overflow: hidden;
+  }
+  canvas { display: block; image-rendering: pixelated; }
+  #game-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* --- HTML OVERLAY --- */
+  #overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #overlay.active { pointer-events: auto; }
+  #overlay.hidden { display: none; }
+
+  #wallet-btn {
+    position: absolute;
+    top: 12px; right: 12px;
+    background: #9b59b6;
+    color: #fff;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    font-family: 'Segoe UI', sans-serif;
+    z-index: 20;
+    pointer-events: auto;
+    transition: background 0.2s;
+  }
+  #wallet-btn:hover { background: #8e44ad; }
+
+  #wager-banner {
+    position: absolute;
+    top: 4px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(155, 89, 182, 0.85);
+    color: #fff;
+    padding: 4px 20px;
+    border-radius: 0 0 8px 8px;
+    font-size: 13px;
+    font-weight: bold;
+    z-index: 20;
+    pointer-events: none;
+    display: none;
+    white-space: nowrap;
+  }
+
+  .panel {
+    background: rgba(10, 10, 26, 0.96);
+    border: 2px solid #9b59b6;
+    border-radius: 12px;
+    padding: 36px 44px;
+    color: #fff;
+    text-align: center;
+    max-width: 480px;
+    width: 90%;
+  }
+  .panel h1 {
+    font-size: 42px;
+    margin-bottom: 8px;
+    background: linear-gradient(90deg, #2ecc40, #e74c3c, #3498db, #f1c40f, #9b59b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .panel h2 {
+    font-size: 22px;
+    color: #9b59b6;
+    margin-bottom: 18px;
+  }
+  .panel p {
+    color: #aaa;
+    margin-bottom: 14px;
+    font-size: 14px;
+  }
+  .panel .subtitle {
+    color: #7f8c8d;
+    font-size: 15px;
+    margin-bottom: 22px;
+  }
+  .menu-btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    margin: 8px 0;
+    background: #16162e;
+    border: 2px solid #4a4a7e;
+    color: #fff;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'Segoe UI', sans-serif;
+  }
+  .menu-btn:hover { border-color: #9b59b6; background: #1e1e3e; }
+  .menu-btn.accent { border-color: #9b59b6; background: #2d1a4e; }
+  .menu-btn.accent:hover { background: #3d2a5e; }
+
+  .room-code {
+    font-size: 48px;
+    font-weight: bold;
+    letter-spacing: 10px;
+    color: #f1c40f;
+    font-family: monospace;
+    margin: 16px 0;
+    text-shadow: 0 0 20px rgba(241, 196, 15, 0.4);
+  }
+
+  .input-field {
+    width: 100%;
+    padding: 12px;
+    background: #16162e;
+    border: 2px solid #4a4a7e;
+    color: #fff;
+    font-size: 24px;
+    font-family: monospace;
+    text-align: center;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    border-radius: 8px;
+    outline: none;
+    margin: 10px 0;
+  }
+  .input-field:focus { border-color: #9b59b6; }
+  .input-field.small {
+    font-size: 18px;
+    letter-spacing: 2px;
+    padding: 10px;
+  }
+
+  .status-msg {
+    color: #9b59b6;
+    font-size: 14px;
+    margin: 10px 0;
+    min-height: 20px;
+  }
+  .status-msg.error { color: #e74c3c; }
+  .status-msg.success { color: #2ecc40; }
+
+  .back-link {
+    color: #555;
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 16px;
+    display: inline-block;
+  }
+  .back-link:hover { color: #9b59b6; }
+
+  .wager-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    margin: 14px 0;
+  }
+  .wager-row label { color: #aaa; font-size: 15px; }
+  .wager-row .input-field { width: 140px; margin: 0; }
+
+  .controls-hint {
+    color: #555;
+    font-size: 12px;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="wager-banner"></div>
+
+  <button id="wallet-btn" onclick="connectWallet()">Connect Wallet</button>
+
+  <div id="overlay" class="active">
+    <!-- Screens injected dynamically -->
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+
+<script>
+// ============================================================
+// OOZE BATTLE ONLINE - PvP Multiplayer with MfT Wagers
+// ============================================================
+
+// --- CONTRACT CONFIG ---
+const ESCROW_ADDRESS = ''; // Fill in after deploying escrow contract
+const MFT_TOKEN_ADDRESS = '0x8fb87d13b40b1a67b22ed1a17e2835fe7e3a9ba3';
+const BASE_CHAIN_ID = '0x2105'; // 8453
+const BASE_CHAIN_ID_DEC = 8453;
+
+const ERC20_ABI = [
+  {"inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"name":"owner","type":"address"},{"name":"spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"name":"account","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"stateMutability":"view","type":"function"}
+];
+
+const ESCROW_ABI = [
+  {"inputs":[{"internalType":"uint256","name":"wager","type":"uint256"}],"name":"createGame","outputs":[{"internalType":"uint256","name":"gameId","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"gameId","type":"uint256"}],"name":"joinGame","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"gameId","type":"uint256"},{"internalType":"address","name":"winner","type":"address"}],"name":"reportWinner","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"gameId","type":"uint256"}],"name":"claimTimeout","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"gameId","type":"uint256"}],"name":"cancelGame","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"gameId","type":"uint256"}],"name":"getGame","outputs":[{"internalType":"address","name":"player1","type":"address"},{"internalType":"address","name":"player2","type":"address"},{"internalType":"uint256","name":"wager","type":"uint256"},{"internalType":"enum OozeBattleEscrow.GameState","name":"state","type":"uint8"},{"internalType":"uint256","name":"startTime","type":"uint256"},{"internalType":"address","name":"reportedWinner","type":"address"},{"internalType":"address","name":"reportedBy","type":"address"},{"internalType":"uint256","name":"reportTime","type":"uint256"}],"stateMutability":"view","type":"function"}
+];
+
+// --- CANVAS SETUP ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const COLS = 6;
+const ROWS = 13;
+const CELL = 40;
+const BOARD_W = COLS * CELL;
+const BOARD_H = (ROWS - 1) * CELL;
+const GAP = 160;
+const SIDE_W = 120;
+const CANVAS_W = SIDE_W + BOARD_W + GAP + BOARD_W + SIDE_W;
+const CANVAS_H = BOARD_H + 100;
+const HEADER_H = 60;
+const BOARD_Y = HEADER_H + 20;
+
+canvas.width = CANVAS_W;
+canvas.height = CANVAS_H;
+
+const P1_BOARD_X = SIDE_W;
+const P2_BOARD_X = SIDE_W + BOARD_W + GAP;
+
+// --- OOZE TYPES ---
+const OOZE = {
+  EMPTY: 0,
+  GREEN_SLIME: 1,
+  RED_MAGMA: 2,
+  BLUE_WATER: 3,
+  YELLOW_ACID: 4,
+  PURPLE_VOID: 5,
+  ATTACK: 6
+};
+
+const OOZE_COLORS = {
+  [OOZE.GREEN_SLIME]:  { main: '#2ecc40', dark: '#1a7a26', light: '#5dfc70', name: 'Green Slime' },
+  [OOZE.RED_MAGMA]:    { main: '#e74c3c', dark: '#962d22', light: '#ff7b6b', name: 'Red Magma' },
+  [OOZE.BLUE_WATER]:   { main: '#3498db', dark: '#1a5276', light: '#6dc0f0', name: 'Blue Water' },
+  [OOZE.YELLOW_ACID]:  { main: '#f1c40f', dark: '#9a7d0a', light: '#f9e154', name: 'Yellow Acid' },
+  [OOZE.PURPLE_VOID]:  { main: '#9b59b6', dark: '#6c3483', light: '#c39bd3', name: 'Purple Void' },
+  [OOZE.ATTACK]:       { main: '#7f8c8d', dark: '#4a5354', light: '#a4b0b1', name: 'Attack Ooze' }
+};
+
+const NUM_COLORS = 5;
+
+// --- SPRITE IMAGES ---
+const OOZE_SPRITES = {};
+
+function loadSprite(oozeType, src) {
+  const img = new Image();
+  img.src = src;
+  img.onload = () => { OOZE_SPRITES[oozeType] = img; };
+}
+
+loadSprite(OOZE.GREEN_SLIME, 'assets/green_slime.png');
+loadSprite(OOZE.RED_MAGMA, 'assets/red_magma.png');
+loadSprite(OOZE.BLUE_WATER, 'assets/blue_water.png');
+loadSprite(OOZE.YELLOW_ACID, 'assets/yellow_acid.png');
+loadSprite(OOZE.PURPLE_VOID, 'assets/purple_void.png');
+
+// --- BACKGROUND IMAGE ---
+const bgImage = new Image();
+bgImage.src = 'assets/background.webp';
+
+// --- CAMPAIGN OPPONENTS (for Practice AI) ---
+const OPPONENTS = [
+  { name: 'Gloop the Timid',    color: '#2ecc40', speed: 1.0,  ai: 0.15, title: 'Swamp Apprentice',   taunt: "P-please don't splash me..." },
+  { name: 'Ember Wyrm',         color: '#e74c3c', speed: 0.9,  ai: 0.25, title: 'Lava Hatchling',     taunt: "My flames will melt your ooze!" },
+  { name: 'Tidecaller Myra',    color: '#3498db', speed: 0.85, ai: 0.35, title: 'Reef Sorceress',     taunt: "The tides obey only me." },
+  { name: 'Baron Corrosive',    color: '#f1c40f', speed: 0.75, ai: 0.45, title: 'Acid Alchemist',     taunt: "My concoctions eat through anything!" },
+  { name: 'Vexia Shadowmeld',   color: '#9b59b6', speed: 0.7,  ai: 0.55, title: 'Void Enchantress',   taunt: "You cannot see what lurks in the void..." },
+  { name: 'Gorgath the Fused',  color: '#1abc9c', speed: 0.65, ai: 0.6,  title: 'Chimera Oozelord',   taunt: "I am ALL the oozes combined!" },
+  { name: 'Sludge Queen Mara',  color: '#e67e22', speed: 0.55, ai: 0.7,  title: 'Bog Monarch',        taunt: "My swamp. My rules." },
+  { name: 'Dreadmire',          color: '#c0392b', speed: 0.5,  ai: 0.75, title: 'Ancient Ooze Titan', taunt: "I have dissolved empires." },
+  { name: 'The Prismatic Ooze', color: '#fff',    speed: 0.4,  ai: 0.85, title: 'Living Rainbow',     taunt: "Every color... every power... MINE." },
+  { name: 'Dr. Oozenheim',      color: '#2c3e50', speed: 0.35, ai: 0.92, title: 'Mad Ooze Architect', taunt: "I CREATED the ooze. I control it ALL!" },
+];
+
+// --- SOUND ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound(freq, duration, type = 'square', vol = 0.1) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.value = vol;
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function sfxPop() { playSound(600, 0.1, 'sine', 0.12); }
+function sfxChain(n) { playSound(400 + n * 150, 0.15, 'sine', 0.15); }
+function sfxDrop() { playSound(150, 0.08, 'triangle', 0.08); }
+function sfxGarbage() { playSound(100, 0.2, 'sawtooth', 0.08); }
+function sfxLose() { playSound(200, 0.5, 'sawtooth', 0.1); }
+function sfxWin() {
+  [523, 659, 784, 1047].forEach((f, i) => {
+    setTimeout(() => playSound(f, 0.3, 'sine', 0.12), i * 150);
+  });
+}
+
+// ============================================================
+// SEEDED RANDOM NUMBER GENERATOR (for synced piece spawns)
+// ============================================================
+class SeededRNG {
+  constructor(seed) {
+    this.state = seed;
+  }
+  next() {
+    // xorshift32
+    this.state ^= this.state << 13;
+    this.state ^= this.state >> 17;
+    this.state ^= this.state << 5;
+    return (this.state >>> 0) / 4294967296;
+  }
+  nextInt(min, max) {
+    return Math.floor(this.next() * (max - min)) + min;
+  }
+}
+
+// Global RNG - replaced per game
+let gameRNG = null;
+
+function randOoze() {
+  if (gameRNG) {
+    return gameRNG.nextInt(1, NUM_COLORS + 1);
+  }
+  return Math.floor(Math.random() * NUM_COLORS) + 1;
+}
+
+// ============================================================
+// BOARD CLASS (from original engine, with online attack hook)
+// ============================================================
+class Board {
+  constructor(isAI = false) {
+    this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(OOZE.EMPTY));
+    this.current = null;
+    this.next = null;
+    this.isAI = isAI;
+    this.score = 0;
+    this.chainCount = 0;
+    this.pendingGarbage = 0;
+    this.dropTimer = 0;
+    this.dropInterval = 60;
+    this.lockDelay = 0;
+    this.animating = false;
+    this.popAnim = [];
+    this.popFrame = 0;
+    this.dead = false;
+    this.allClear = false;
+    this.opponent = null;
+
+    // AI state
+    this.aiMoveDecided = false;
+    this.aiTargetCol = 3;
+    this.aiTargetRot = 0;
+    this.aiMoveTimer = 0;
+    this.aiDifficulty = 0.5;
+
+    // Online mode: callback for sending attacks
+    this.onAttack = null; // (count) => { ... }
+
+    this.spawnNext();
+    this.spawnNext();
+  }
+
+  spawnNext() {
+    this.current = this.next;
+    this.next = {
+      colors: [randOoze(), randOoze()],
+      col: 2,
+      row: 0,
+      rotation: 0
+    };
+    if (this.current) {
+      this.current.col = 2;
+      this.current.row = 0;
+      this.current.rotation = 0;
+      if (this.grid[0][2] !== OOZE.EMPTY || this.grid[0][3] !== OOZE.EMPTY) {
+        this.dead = true;
+      }
+    }
+    this.dropTimer = 0;
+    this.lockDelay = 0;
+    this.aiMoveDecided = false;
+  }
+
+  getSecondPos(piece) {
+    const offsets = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    const [dc, dr] = offsets[piece.rotation];
+    return { col: piece.col + dc, row: piece.row + dr };
+  }
+
+  isValid(col, row) {
+    return col >= 0 && col < COLS && row >= 0 && row < ROWS;
+  }
+
+  isFree(col, row) {
+    return this.isValid(col, row) && this.grid[row][col] === OOZE.EMPTY;
+  }
+
+  canPlace(piece) {
+    const s = this.getSecondPos(piece);
+    return this.isFree(piece.col, piece.row) && this.isFree(s.col, s.row);
+  }
+
+  moveLeft() {
+    if (!this.current || this.animating) return;
+    const test = { ...this.current, col: this.current.col - 1 };
+    if (this.canPlace(test)) { this.current.col--; }
+  }
+
+  moveRight() {
+    if (!this.current || this.animating) return;
+    const test = { ...this.current, col: this.current.col + 1 };
+    if (this.canPlace(test)) { this.current.col++; }
+  }
+
+  rotCW() {
+    if (!this.current || this.animating) return;
+    const test = { ...this.current, rotation: (this.current.rotation + 1) % 4 };
+    if (this.canPlace(test)) {
+      this.current.rotation = test.rotation;
+    } else {
+      const kicks = [
+        { col: test.col - 1 }, { col: test.col + 1 },
+        { col: test.col, row: test.row - 1 }
+      ];
+      for (const kick of kicks) {
+        const t2 = { ...test, ...kick };
+        if (this.canPlace(t2)) {
+          Object.assign(this.current, t2);
+          this.current.rotation = test.rotation;
+          return;
+        }
+      }
+    }
+  }
+
+  rotCCW() {
+    if (!this.current || this.animating) return;
+    const test = { ...this.current, rotation: (this.current.rotation + 3) % 4 };
+    if (this.canPlace(test)) {
+      this.current.rotation = test.rotation;
+    } else {
+      const kicks = [
+        { col: test.col - 1 }, { col: test.col + 1 },
+        { col: test.col, row: test.row - 1 }
+      ];
+      for (const kick of kicks) {
+        const t2 = { ...test, ...kick };
+        if (this.canPlace(t2)) {
+          Object.assign(this.current, t2);
+          this.current.rotation = test.rotation;
+          return;
+        }
+      }
+    }
+  }
+
+  hardDrop() {
+    if (!this.current || this.animating) return;
+    while (this.dropOne()) {}
+    this.lockPiece();
+  }
+
+  softDrop() {
+    if (!this.current || this.animating) return;
+    if (this.dropOne()) {
+      this.score += 1;
+    } else {
+      this.lockPiece();
+    }
+    this.dropTimer = 0;
+  }
+
+  dropOne() {
+    if (!this.current) return false;
+    const test = { ...this.current, row: this.current.row + 1 };
+    if (this.canPlace(test)) {
+      this.current.row++;
+      return true;
+    }
+    return false;
+  }
+
+  lockPiece() {
+    if (!this.current) return;
+    const s = this.getSecondPos(this.current);
+    if (this.isValid(this.current.col, this.current.row))
+      this.grid[this.current.row][this.current.col] = this.current.colors[0];
+    if (this.isValid(s.col, s.row))
+      this.grid[s.row][s.col] = this.current.colors[1];
+    this.current = null;
+    sfxDrop();
+    this.applyGravity();
+    this.chainCount = 0;
+    this.resolveChains();
+  }
+
+  applyGravity() {
+    for (let c = 0; c < COLS; c++) {
+      let writeRow = ROWS - 1;
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (this.grid[r][c] !== OOZE.EMPTY) {
+          if (writeRow !== r) {
+            this.grid[writeRow][c] = this.grid[r][c];
+            this.grid[r][c] = OOZE.EMPTY;
+          }
+          writeRow--;
+        }
+      }
+    }
+  }
+
+  findMatches() {
+    const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+    const groups = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (visited[r][c] || this.grid[r][c] === OOZE.EMPTY || this.grid[r][c] === OOZE.ATTACK) continue;
+        const color = this.grid[r][c];
+        const group = [];
+        const stack = [{ r, c }];
+        while (stack.length) {
+          const { r: cr, c: cc } = stack.pop();
+          if (cr < 0 || cr >= ROWS || cc < 0 || cc >= COLS) continue;
+          if (visited[cr][cc]) continue;
+          if (this.grid[cr][cc] !== color) continue;
+          visited[cr][cc] = true;
+          group.push({ r: cr, c: cc });
+          stack.push({ r: cr - 1, c: cc }, { r: cr + 1, c: cc }, { r: cr, c: cc - 1 }, { r: cr, c: cc + 1 });
+        }
+        if (group.length >= 4) {
+          groups.push({ color, cells: group });
+        }
+      }
+    }
+    return groups;
+  }
+
+  resolveChains() {
+    const matches = this.findMatches();
+    if (matches.length === 0) {
+      if (this.pendingGarbage > 0) {
+        this.addGarbage(this.pendingGarbage);
+        this.pendingGarbage = 0;
+      }
+      this.spawnNext();
+      return;
+    }
+
+    this.chainCount++;
+    this.animating = true;
+    this.popAnim = [];
+    this.popFrame = 0;
+
+    let cellsCleared = 0;
+    const garbageToRemove = new Set();
+
+    for (const group of matches) {
+      for (const { r, c } of group.cells) {
+        this.popAnim.push({ r, c, color: this.grid[r][c] });
+        this.grid[r][c] = OOZE.EMPTY;
+        cellsCleared++;
+
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [dr, dc] of dirs) {
+          const nr = r + dr, nc = c + dc;
+          if (this.isValid(nc, nr) && this.grid[nr][nc] === OOZE.ATTACK) {
+            garbageToRemove.add(`${nr},${nc}`);
+          }
+        }
+      }
+    }
+
+    for (const key of garbageToRemove) {
+      const [gr, gc] = key.split(',').map(Number);
+      this.popAnim.push({ r: gr, c: gc, color: OOZE.ATTACK });
+      this.grid[gr][gc] = OOZE.EMPTY;
+    }
+
+    const chainPower = Math.pow(2, this.chainCount - 1);
+    const points = cellsCleared * 10 * chainPower;
+    this.score += points;
+
+    // Attack ooze calculation
+    let attackOoze = Math.max(0, cellsCleared - 4);
+    if (this.chainCount > 1) {
+      attackOoze = (attackOoze + 1) * this.chainCount;
+    }
+
+    if (attackOoze > 0) {
+      // Online mode: send via network
+      if (this.onAttack) {
+        // Offset against our own pending garbage first
+        if (this.pendingGarbage > 0) {
+          const offset = Math.min(this.pendingGarbage, attackOoze);
+          this.pendingGarbage -= offset;
+          const remaining = attackOoze - offset;
+          if (remaining > 0) this.onAttack(remaining);
+        } else {
+          this.onAttack(attackOoze);
+        }
+      } else if (this.opponent) {
+        // Local mode (practice AI)
+        if (this.pendingGarbage > 0) {
+          const offset = Math.min(this.pendingGarbage, attackOoze);
+          this.pendingGarbage -= offset;
+          const remaining = attackOoze - offset;
+          if (remaining > 0) this.opponent.pendingGarbage += remaining;
+        } else {
+          this.opponent.pendingGarbage += attackOoze;
+        }
+      }
+    }
+
+    sfxChain(this.chainCount);
+
+    setTimeout(() => {
+      this.animating = false;
+      this.popAnim = [];
+      this.applyGravity();
+      this.resolveChains();
+    }, 400);
+  }
+
+  addGarbage(count) {
+    sfxGarbage();
+    const rows = Math.ceil(count / COLS);
+    for (let i = 0; i < rows; i++) {
+      const garbageInRow = (i === rows - 1) ? (count % COLS || COLS) : COLS;
+      const hole = Math.floor(Math.random() * COLS);
+      for (let c = 0; c < COLS; c++) {
+        if (c === hole || c >= garbageInRow) {
+          // skip
+        } else {
+          let landRow = -1;
+          for (let r = ROWS - 1; r >= 0; r--) {
+            if (this.grid[r][c] === OOZE.EMPTY) {
+              landRow = r;
+              break;
+            }
+          }
+          if (landRow >= 0) {
+            this.grid[landRow][c] = OOZE.ATTACK;
+          }
+        }
+      }
+    }
+    if (this.grid[0][2] !== OOZE.EMPTY || this.grid[0][3] !== OOZE.EMPTY) {
+      this.dead = true;
+    }
+  }
+
+  // --- AI LOGIC ---
+  aiThink() {
+    if (this.aiMoveDecided || !this.current || this.animating) return;
+    const difficulty = this.aiDifficulty;
+    if (Math.random() > difficulty) {
+      this.aiTargetCol = Math.floor(Math.random() * COLS);
+      this.aiTargetRot = Math.floor(Math.random() * 4);
+      this.aiMoveDecided = true;
+      return;
+    }
+    let bestScore = -Infinity;
+    let bestCol = 2;
+    let bestRot = 0;
+    for (let rot = 0; rot < 4; rot++) {
+      for (let col = 0; col < COLS; col++) {
+        const testPiece = { ...this.current, col, rotation: rot };
+        const s = this.getSecondPos(testPiece);
+        if (!this.isValid(testPiece.col, testPiece.row) || !this.isValid(s.col, s.row)) continue;
+        const simGrid = this.grid.map(r => [...r]);
+        const dropPiece = { ...testPiece };
+        let canDrop = true;
+        while (canDrop) {
+          const next = { ...dropPiece, row: dropPiece.row + 1 };
+          const ns = this.getSecondPos(next);
+          if (this.isValid(next.col, next.row) && this.isValid(ns.col, ns.row) &&
+              simGrid[next.row][next.col] === OOZE.EMPTY && simGrid[ns.row][ns.col] === OOZE.EMPTY) {
+            dropPiece.row = next.row;
+          } else {
+            canDrop = false;
+          }
+        }
+        const finalS = this.getSecondPos(dropPiece);
+        if (!this.isValid(dropPiece.col, dropPiece.row) || !this.isValid(finalS.col, finalS.row)) continue;
+        if (simGrid[dropPiece.row][dropPiece.col] !== OOZE.EMPTY || simGrid[finalS.row][finalS.col] !== OOZE.EMPTY) continue;
+        simGrid[dropPiece.row][dropPiece.col] = this.current.colors[0];
+        simGrid[finalS.row][finalS.col] = this.current.colors[1];
+        let score = 0;
+        score += dropPiece.row * 2;
+        const chains = this.simFindMatches(simGrid);
+        if (chains.length > 0) {
+          let totalCells = 0;
+          for (const g of chains) totalCells += g.cells.length;
+          score += totalCells * 20;
+          score += chains.length * 30;
+        }
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [pr, pc] of [[dropPiece.row, dropPiece.col], [finalS.row, finalS.col]]) {
+          const myColor = simGrid[pr][pc];
+          for (const [dr, dc] of dirs) {
+            const nr = pr + dr, nc = pc + dc;
+            if (this.isValid(nc, nr) && simGrid[nr][nc] === myColor) {
+              score += 8;
+            }
+          }
+        }
+        for (let c2 = 0; c2 < COLS; c2++) {
+          for (let r2 = 0; r2 < ROWS; r2++) {
+            if (simGrid[r2][c2] !== OOZE.EMPTY) {
+              score -= (ROWS - r2) * 0.5;
+              break;
+            }
+          }
+        }
+        if (simGrid[1][2] !== OOZE.EMPTY) score -= 100;
+        if (simGrid[1][3] !== OOZE.EMPTY) score -= 100;
+        if (score > bestScore) {
+          bestScore = score;
+          bestCol = col;
+          bestRot = rot;
+        }
+      }
+    }
+    this.aiTargetCol = bestCol;
+    this.aiTargetRot = bestRot;
+    this.aiMoveDecided = true;
+  }
+
+  simFindMatches(grid) {
+    const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+    const groups = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (visited[r][c] || grid[r][c] === OOZE.EMPTY || grid[r][c] === OOZE.ATTACK) continue;
+        const color = grid[r][c];
+        const group = [];
+        const stack = [{ r, c }];
+        while (stack.length) {
+          const { r: cr, c: cc } = stack.pop();
+          if (cr < 0 || cr >= ROWS || cc < 0 || cc >= COLS) continue;
+          if (visited[cr][cc] || grid[cr][cc] !== color) continue;
+          visited[cr][cc] = true;
+          group.push({ r: cr, c: cc });
+          stack.push({ r: cr - 1, c: cc }, { r: cr + 1, c: cc }, { r: cr, c: cc - 1 }, { r: cr, c: cc + 1 });
+        }
+        if (group.length >= 4) groups.push({ color, cells: group });
+      }
+    }
+    return groups;
+  }
+
+  aiAct() {
+    if (!this.current || this.animating || !this.aiMoveDecided) return;
+    this.aiMoveTimer++;
+    const moveSpeed = 4;
+    if (this.aiMoveTimer < moveSpeed) return;
+    this.aiMoveTimer = 0;
+    if (this.current.rotation !== this.aiTargetRot) {
+      this.rotCW();
+      return;
+    }
+    if (this.current.col < this.aiTargetCol) {
+      this.moveRight();
+    } else if (this.current.col > this.aiTargetCol) {
+      this.moveLeft();
+    } else if (this.aiDifficulty > 0.5) {
+      this.softDrop();
+    }
+  }
+
+  update(speedMult = 1) {
+    if (this.dead || this.animating) return;
+    if (!this.current) return;
+    if (this.isAI) {
+      this.aiThink();
+      this.aiAct();
+    }
+    this.dropTimer++;
+    if (this.dropTimer >= this.dropInterval * speedMult) {
+      this.dropTimer = 0;
+      if (!this.dropOne()) {
+        this.lockDelay++;
+        if (this.lockDelay >= 2) {
+          this.lockPiece();
+          this.lockDelay = 0;
+        }
+      } else {
+        this.lockDelay = 0;
+      }
+    }
+  }
+}
+
+// ============================================================
+// RENDERING (identical to original)
+// ============================================================
+function drawOoze(x, y, type, size = CELL - 4, alpha = 1, wiggle = 0) {
+  if (type === OOZE.EMPTY) return;
+  const colors = OOZE_COLORS[type];
+  if (!colors) return;
+
+  const cx = x + CELL / 2;
+  const cy = y + CELL / 2;
+  const r = size / 2;
+
+  ctx.save();
+
+  if (OOZE_SPRITES[type]) {
+    ctx.globalAlpha = alpha;
+    const wobble = Math.sin(Date.now() / 200 + x + y) * wiggle;
+    const s = size + 4;
+    ctx.drawImage(OOZE_SPRITES[type], cx - s / 2, cy - s / 2 + wobble, s, s);
+    ctx.restore();
+    return;
+  }
+  ctx.globalAlpha = alpha;
+
+  const wobble = Math.sin(Date.now() / 200 + x + y) * wiggle;
+
+  ctx.beginPath();
+  for (let a = 0; a < Math.PI * 2; a += 0.1) {
+    const blobR = r + Math.sin(a * 3 + Date.now() / 300) * 2 * (wiggle + 0.5);
+    const px = cx + Math.cos(a) * blobR;
+    const py = cy + Math.sin(a) * blobR + wobble;
+    if (a === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+
+  const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r);
+  grad.addColorStop(0, colors.light);
+  grad.addColorStop(0.7, colors.main);
+  grad.addColorStop(1, colors.dark);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.strokeStyle = colors.dark;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  if (type !== OOZE.ATTACK) {
+    const eyeOffX = r * 0.25;
+    const eyeY = cy - r * 0.1 + wobble;
+    const eyeR = r * 0.18;
+    const pupilR = r * 0.1;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx - eyeOffX, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.arc(cx + eyeOffX, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(cx - eyeOffX, eyeY + 1, pupilR, 0, Math.PI * 2);
+    ctx.arc(cx + eyeOffX, eyeY + 1, pupilR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy + r * 0.3 + wobble, r * 0.2, 0, Math.PI);
+    ctx.strokeStyle = colors.dark;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = colors.dark;
+    ctx.lineWidth = 2;
+    const s = r * 0.3;
+    ctx.beginPath();
+    ctx.moveTo(cx - s, cy - s); ctx.lineTo(cx + s, cy + s);
+    ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.25, cy - r * 0.3, r * 0.15, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255,255,255,${0.4 * alpha})`;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawBoard(board, bx, by) {
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(bx, by, BOARD_W, BOARD_H);
+
+  ctx.strokeStyle = '#2a2a4e';
+  ctx.lineWidth = 0.5;
+  for (let r = 0; r < ROWS - 1; r++) {
+    for (let c = 0; c < COLS; c++) {
+      ctx.strokeRect(bx + c * CELL, by + r * CELL, CELL, CELL);
+    }
+  }
+
+  ctx.strokeStyle = '#4a4a7e';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(bx - 1, by - 1, BOARD_W + 2, BOARD_H + 2);
+
+  for (let r = 1; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (board.grid[r][c] !== OOZE.EMPTY) {
+        drawOoze(bx + c * CELL, by + (r - 1) * CELL, board.grid[r][c], CELL - 4, 1, 0.5);
+      }
+    }
+  }
+
+  if (board.popAnim.length > 0) {
+    board.popFrame++;
+    const progress = board.popFrame / 24;
+    for (const { r, c, color } of board.popAnim) {
+      if (r === 0) continue;
+      const alpha = 1 - progress;
+      const size = (CELL - 4) * (1 + progress * 0.5);
+      drawOoze(bx + c * CELL, by + (r - 1) * CELL, color, size, alpha, 2);
+    }
+  }
+
+  if (board.current && !board.animating) {
+    const p = board.current;
+    const s = board.getSecondPos(p);
+    if (p.row >= 1) drawOoze(bx + p.col * CELL, by + (p.row - 1) * CELL, p.colors[0], CELL - 4, 1, 1);
+    if (s.row >= 1) drawOoze(bx + s.col * CELL, by + (s.row - 1) * CELL, p.colors[1], CELL - 4, 1, 1);
+
+    const ghost = { ...p };
+    while (true) {
+      const next = { ...ghost, row: ghost.row + 1 };
+      const ns = board.getSecondPos(next);
+      if (board.isFree(next.col, next.row) && board.isFree(ns.col, ns.row)) {
+        ghost.row = next.row;
+      } else break;
+    }
+    if (ghost.row !== p.row) {
+      const gs = board.getSecondPos(ghost);
+      if (ghost.row >= 1) drawOoze(bx + ghost.col * CELL, by + (ghost.row - 1) * CELL, p.colors[0], CELL - 6, 0.25, 0);
+      if (gs.row >= 1) drawOoze(bx + gs.col * CELL, by + (gs.row - 1) * CELL, p.colors[1], CELL - 6, 0.25, 0);
+    }
+  }
+
+  if (board.pendingGarbage > 0) {
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`! ${board.pendingGarbage} ATTACK OOZE !`, bx + BOARD_W / 2, by - 8);
+  }
+}
+
+// Draw opponent board from remote state snapshot (no falling piece physics)
+function drawRemoteBoard(state, bx, by) {
+  if (!state || !state.grid) return;
+
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(bx, by, BOARD_W, BOARD_H);
+
+  ctx.strokeStyle = '#2a2a4e';
+  ctx.lineWidth = 0.5;
+  for (let r = 0; r < ROWS - 1; r++) {
+    for (let c = 0; c < COLS; c++) {
+      ctx.strokeRect(bx + c * CELL, by + r * CELL, CELL, CELL);
+    }
+  }
+
+  ctx.strokeStyle = '#4a4a7e';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(bx - 1, by - 1, BOARD_W + 2, BOARD_H + 2);
+
+  for (let r = 1; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (state.grid[r] && state.grid[r][c] !== OOZE.EMPTY) {
+        drawOoze(bx + c * CELL, by + (r - 1) * CELL, state.grid[r][c], CELL - 4, 1, 0.5);
+      }
+    }
+  }
+
+  if (state.pendingGarbage > 0) {
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`! ${state.pendingGarbage} ATTACK OOZE !`, bx + BOARD_W / 2, by - 8);
+  }
+}
+
+function drawNextPiece(board, x, y, label) {
+  ctx.fillStyle = '#ccc';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x + CELL, y - 5);
+  ctx.fillStyle = '#16162e';
+  ctx.fillRect(x, y, CELL * 2, CELL * 2.5);
+  ctx.strokeStyle = '#4a4a7e';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, CELL * 2, CELL * 2.5);
+  if (board.next) {
+    drawOoze(x + CELL / 2, y + 10, board.next.colors[0], CELL - 8, 1, 0.3);
+    drawOoze(x + CELL / 2, y + 10 + CELL, board.next.colors[1], CELL - 8, 1, 0.3);
+  }
+}
+
+function drawScore(board, x, y, name) {
+  ctx.fillStyle = '#aaa';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(name, x, y);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText(board.score.toString(), x, y + 24);
+  if (board.chainCount > 1) {
+    ctx.fillStyle = '#f1c40f';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText(`${board.chainCount} CHAIN!`, x, y + 48);
+  }
+}
+
+function drawRemoteScore(state, x, y, name) {
+  ctx.fillStyle = '#aaa';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(name, x, y);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText((state.score || 0).toString(), x, y + 24);
+  if (state.chainCount > 1) {
+    ctx.fillStyle = '#f1c40f';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText(`${state.chainCount} CHAIN!`, x, y + 48);
+  }
+}
+
+function drawRemoteNext(state, x, y, label) {
+  ctx.fillStyle = '#ccc';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x + CELL, y - 5);
+  ctx.fillStyle = '#16162e';
+  ctx.fillRect(x, y, CELL * 2, CELL * 2.5);
+  ctx.strokeStyle = '#4a4a7e';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, CELL * 2, CELL * 2.5);
+  // Remote next piece not synced - just leave blank
+}
+
+// ============================================================
+// GAME STATE MANAGEMENT
+// ============================================================
+let gameState = 'title'; // title, lobby_create, lobby_join, waiting, playing, practice_select, practice, win, lose
+let player = null;
+let ai = null;
+let currentOpponent = 0;
+let campaignDefeated = [];
+let practiceAiIndex = 4; // default mid-difficulty for practice
+
+// --- ONLINE STATE ---
+let peer = null;
+let conn = null;
+let isHost = false;
+let roomCode = '';
+let gameSeed = 0;
+let frameCount = 0;
+let remoteState = null; // latest state snapshot from opponent
+let remoteReady = false;
+let localReady = false;
+let onlineGameId = 0; // escrow contract game ID
+let wagerAmount = 0; // in whole MfT tokens
+let localAddress = '';
+let remoteAddress = '';
+let opponentName = 'Opponent';
+let gameResultReported = false;
+
+// --- WALLET STATE ---
+let walletProvider = null;
+let walletSigner = null;
+let walletAddress = '';
+let mftContract = null;
+let escrowContract = null;
+let mftDecimals = 18;
+
+// ============================================================
+// WALLET CONNECTION
+// ============================================================
+async function connectWallet() {
+  const btn = document.getElementById('wallet-btn');
+  if (walletAddress) {
+    // Already connected - show address
+    return;
+  }
+  if (!window.ethereum) {
+    alert('No wallet detected. Please install MetaMask or another Web3 wallet.');
+    return;
+  }
+  try {
+    btn.textContent = 'Connecting...';
+    walletProvider = new ethers.BrowserProvider(window.ethereum);
+    await walletProvider.send('eth_requestAccounts', []);
+
+    // Switch to Base
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: BASE_CHAIN_ID }],
+      });
+    } catch (switchError) {
+      if (switchError.code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: BASE_CHAIN_ID,
+            chainName: 'Base',
+            nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+            rpcUrls: ['https://mainnet.base.org'],
+            blockExplorerUrls: ['https://basescan.org'],
+          }],
+        });
+      }
+    }
+
+    walletSigner = await walletProvider.getSigner();
+    walletAddress = await walletSigner.getAddress();
+    localAddress = walletAddress;
+
+    mftContract = new ethers.Contract(MFT_TOKEN_ADDRESS, ERC20_ABI, walletSigner);
+    try {
+      mftDecimals = Number(await mftContract.decimals());
+    } catch (e) {
+      mftDecimals = 18;
+    }
+
+    if (ESCROW_ADDRESS) {
+      escrowContract = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, walletSigner);
+    }
+
+    btn.textContent = walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4);
+    btn.style.background = '#2ecc40';
+  } catch (err) {
+    console.error('Wallet connection failed:', err);
+    btn.textContent = 'Connect Wallet';
+    alert('Wallet connection failed: ' + (err.message || err));
+  }
+}
+
+// Listen for account/chain changes
+if (window.ethereum) {
+  window.ethereum.on('accountsChanged', () => { location.reload(); });
+  window.ethereum.on('chainChanged', () => { location.reload(); });
+}
+
+// ============================================================
+// PEERJS NETWORKING
+// ============================================================
+function generateRoomCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * 26)];
+  return code;
+}
+
+function getPeerId(code) {
+  return 'ooze-' + code;
+}
+
+function cleanupPeer() {
+  if (conn) { try { conn.close(); } catch(e) {} conn = null; }
+  if (peer) { try { peer.destroy(); } catch(e) {} peer = null; }
+  remoteState = null;
+  remoteReady = false;
+  localReady = false;
+  gameResultReported = false;
+}
+
+function handleMessage(data) {
+  if (!data || !data.type) return;
+
+  switch (data.type) {
+    case 'state':
+      remoteState = {
+        grid: data.grid,
+        score: data.score,
+        pendingGarbage: data.pendingGarbage,
+        dead: data.dead,
+        chainCount: data.chainCount
+      };
+      break;
+
+    case 'attack':
+      if (player && gameState === 'playing') {
+        player.pendingGarbage += data.count;
+      }
+      break;
+
+    case 'dead':
+      if (remoteState) remoteState.dead = true;
+      break;
+
+    case 'wager':
+      remoteAddress = data.address || '';
+      wagerAmount = data.amount || 0;
+      onlineGameId = data.gameId || 0;
+      break;
+
+    case 'ready':
+      remoteReady = true;
+      if (localReady && isHost) {
+        startOnlineGame();
+      }
+      break;
+
+    case 'start':
+      gameSeed = data.seed;
+      beginOnlineMatch();
+      break;
+  }
+}
+
+function createRoom() {
+  cleanupPeer();
+  roomCode = generateRoomCode();
+  isHost = true;
+
+  const statusEl = document.getElementById('status-msg');
+  if (statusEl) statusEl.textContent = 'Creating room...';
+
+  peer = new Peer(getPeerId(roomCode), {
+    debug: 0,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    }
+  });
+
+  peer.on('open', () => {
+    if (statusEl) {
+      statusEl.textContent = 'Waiting for opponent to join...';
+      statusEl.className = 'status-msg';
+    }
+    showWaitingScreen();
+  });
+
+  peer.on('connection', (c) => {
+    conn = c;
+    setupConnection();
+  });
+
+  peer.on('error', (err) => {
+    console.error('PeerJS error:', err);
+    if (statusEl) {
+      statusEl.textContent = 'Connection error: ' + err.type;
+      statusEl.className = 'status-msg error';
+    }
+  });
+}
+
+function joinRoom(code) {
+  cleanupPeer();
+  roomCode = code.toUpperCase();
+  isHost = false;
+
+  const statusEl = document.getElementById('status-msg');
+  if (statusEl) statusEl.textContent = 'Connecting to room...';
+
+  peer = new Peer(undefined, {
+    debug: 0,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    }
+  });
+
+  peer.on('open', () => {
+    conn = peer.connect(getPeerId(roomCode), { reliable: true });
+    setupConnection();
+  });
+
+  peer.on('error', (err) => {
+    console.error('PeerJS error:', err);
+    if (statusEl) {
+      statusEl.textContent = 'Could not connect. Check room code.';
+      statusEl.className = 'status-msg error';
+    }
+  });
+}
+
+function setupConnection() {
+  conn.on('open', () => {
+    // Connection established
+    const statusEl = document.getElementById('status-msg');
+    if (statusEl) {
+      statusEl.textContent = 'Connected! Setting up match...';
+      statusEl.className = 'status-msg success';
+    }
+
+    // Send wager info
+    conn.send({
+      type: 'wager',
+      amount: wagerAmount,
+      gameId: onlineGameId,
+      address: localAddress
+    });
+
+    if (isHost) {
+      showHostWagerScreen();
+    } else {
+      // Joiner: wait a moment to receive host's wager info, then show join screen
+      setTimeout(() => showJoinWagerScreen(), 500);
+    }
+  });
+
+  conn.on('data', handleMessage);
+
+  conn.on('close', () => {
+    if (gameState === 'playing') {
+      // Opponent disconnected during game - you win
+      if (remoteState) remoteState.dead = true;
+    }
+  });
+
+  conn.on('error', (err) => {
+    console.error('Connection error:', err);
+  });
+}
+
+function sendState() {
+  if (!conn || !conn.open || !player) return;
+  conn.send({
+    type: 'state',
+    grid: player.grid,
+    score: player.score,
+    pendingGarbage: player.pendingGarbage,
+    dead: player.dead,
+    chainCount: player.chainCount
+  });
+}
+
+function sendAttack(count) {
+  if (!conn || !conn.open) return;
+  conn.send({ type: 'attack', count });
+}
+
+function sendDead() {
+  if (!conn || !conn.open) return;
+  conn.send({ type: 'dead' });
+}
+
+function sendReady() {
+  localReady = true;
+  if (!conn || !conn.open) return;
+  conn.send({ type: 'ready' });
+  if (isHost && remoteReady) {
+    startOnlineGame();
+  }
+}
+
+function startOnlineGame() {
+  gameSeed = Math.floor(Math.random() * 2147483647) + 1;
+  conn.send({ type: 'start', seed: gameSeed });
+  beginOnlineMatch();
+}
+
+function beginOnlineMatch() {
+  gameRNG = new SeededRNG(gameSeed);
+  player = new Board(false);
+  player.onAttack = sendAttack;
+  remoteState = { grid: Array.from({ length: ROWS }, () => Array(COLS).fill(OOZE.EMPTY)), score: 0, pendingGarbage: 0, dead: false, chainCount: 0 };
+  frameCount = 0;
+  gameResultReported = false;
+  gameState = 'playing';
+
+  // Show wager banner
+  const banner = document.getElementById('wager-banner');
+  if (wagerAmount > 0 && onlineGameId > 0) {
+    banner.textContent = `Wager: ${wagerAmount} MfT | Game #${onlineGameId}`;
+    banner.style.display = 'block';
+  } else if (wagerAmount > 0) {
+    banner.textContent = `Wager: ${wagerAmount} MfT (Free Play)`;
+    banner.style.display = 'block';
+  } else {
+    banner.textContent = 'Free Play';
+    banner.style.display = 'block';
+  }
+
+  hideOverlay();
+}
+
+// ============================================================
+// ESCROW CONTRACT INTERACTIONS
+// ============================================================
+async function approveAndCreateGame(wagerTokens) {
+  if (!escrowContract || !mftContract) {
+    throw new Error('Contracts not initialized. Is escrow address set?');
+  }
+  const amount = ethers.parseUnits(wagerTokens.toString(), mftDecimals);
+
+  // Check allowance
+  const allowance = await mftContract.allowance(walletAddress, ESCROW_ADDRESS);
+  if (allowance < amount) {
+    const tx = await mftContract.approve(ESCROW_ADDRESS, amount);
+    await tx.wait();
+  }
+
+  // Create game
+  const tx = await escrowContract.createGame(amount);
+  const receipt = await tx.wait();
+
+  // Parse gameId from events (assume first topic or return value)
+  // Simple approach: read from receipt logs
+  let gameId = 0;
+  try {
+    // Try to decode return value
+    const iface = new ethers.Interface(ESCROW_ABI);
+    for (const log of receipt.logs) {
+      try {
+        const parsed = iface.parseLog(log);
+        if (parsed && parsed.args.gameId) {
+          gameId = Number(parsed.args.gameId);
+          break;
+        }
+      } catch (e) {}
+    }
+    // Fallback: call getGame with incrementing IDs (not ideal)
+    if (gameId === 0) {
+      // Use transaction hash as a fallback identifier
+      gameId = parseInt(receipt.hash.slice(2, 10), 16);
+    }
+  } catch (e) {
+    console.error('Could not parse gameId:', e);
+  }
+
+  return gameId;
+}
+
+async function approveAndJoinGame(gameId, wagerTokens) {
+  if (!escrowContract || !mftContract) {
+    throw new Error('Contracts not initialized. Is escrow address set?');
+  }
+  const amount = ethers.parseUnits(wagerTokens.toString(), mftDecimals);
+
+  const allowance = await mftContract.allowance(walletAddress, ESCROW_ADDRESS);
+  if (allowance < amount) {
+    const tx = await mftContract.approve(ESCROW_ADDRESS, amount);
+    await tx.wait();
+  }
+
+  const tx = await escrowContract.joinGame(gameId);
+  await tx.wait();
+}
+
+async function reportGameWinner(gameId, winnerAddr) {
+  if (!escrowContract || gameResultReported) return;
+  gameResultReported = true;
+  try {
+    const tx = await escrowContract.reportWinner(gameId, winnerAddr);
+    await tx.wait();
+  } catch (e) {
+    console.error('Failed to report winner:', e);
+    gameResultReported = false;
+  }
+}
+
+// ============================================================
+// OVERLAY UI SCREENS
+// ============================================================
+const overlay = document.getElementById('overlay');
+
+function showOverlay() {
+  overlay.classList.add('active');
+  overlay.classList.remove('hidden');
+}
+
+function hideOverlay() {
+  overlay.classList.remove('active');
+  overlay.classList.add('hidden');
+}
+
+function showTitleScreen() {
+  gameState = 'title';
+  cleanupPeer();
+  document.getElementById('wager-banner').style.display = 'none';
+  showOverlay();
+  overlay.innerHTML = `
+    <div class="panel">
+      <h1>OOZE BATTLE</h1>
+      <p class="subtitle">A Fantasy Puzzle Battle</p>
+      <button class="menu-btn" onclick="window.location.href='index.html'">Campaign Mode</button>
+      <button class="menu-btn accent" onclick="showOnlineLobby()">Online Battle</button>
+      <button class="menu-btn" onclick="showPracticeSelect()">Practice vs AI</button>
+      <div class="controls-hint">Arrows: Move | Z/X: Rotate | Space: Hard Drop</div>
+    </div>
+  `;
+}
+
+function showOnlineLobby() {
+  showOverlay();
+  overlay.innerHTML = `
+    <div class="panel">
+      <h2>Online Battle</h2>
+      <button class="menu-btn accent" onclick="showCreateRoom()">Create Room</button>
+      <button class="menu-btn" onclick="showJoinRoom()">Join Room</button>
+      <span class="back-link" onclick="showTitleScreen()">Back to Title</span>
+    </div>
+  `;
+}
+
+function showCreateRoom() {
+  showOverlay();
+  overlay.innerHTML = `
+    <div class="panel">
+      <h2>Create Room</h2>
+      <div class="wager-row">
+        <label>Wager (MfT):</label>
+        <input type="number" class="input-field small" id="wager-input" value="0" min="0" step="1">
+      </div>
+      <p style="color:#555;font-size:12px;">Set to 0 for free play (no contract interaction)</p>
+      <button class="menu-btn accent" onclick="doCreateRoom()">Create Room</button>
+      <div id="status-msg" class="status-msg"></div>
+      <span class="back-link" onclick="cleanupPeer();showOnlineLobby()">Cancel</span>
+    </div>
+  `;
+}
+
+async function doCreateRoom() {
+  const input = document.getElementById('wager-input');
+  wagerAmount = parseInt(input.value) || 0;
+  const statusEl = document.getElementById('status-msg');
+
+  if (wagerAmount > 0) {
+    // Need wallet
+    if (!walletAddress) {
+      statusEl.textContent = 'Connect your wallet first (top right button).';
+      statusEl.className = 'status-msg error';
+      return;
+    }
+    if (!ESCROW_ADDRESS) {
+      statusEl.textContent = 'Escrow contract not deployed yet. Use 0 for free play.';
+      statusEl.className = 'status-msg error';
+      return;
+    }
+    // Approve + create on contract
+    try {
+      statusEl.textContent = 'Approving MfT tokens...';
+      statusEl.className = 'status-msg';
+      onlineGameId = await approveAndCreateGame(wagerAmount);
+      statusEl.textContent = 'Game created on-chain! Creating room...';
+    } catch (err) {
+      statusEl.textContent = 'Transaction failed: ' + (err.reason || err.message || err);
+      statusEl.className = 'status-msg error';
+      return;
+    }
+  } else {
+    onlineGameId = 0;
+  }
+
+  createRoom();
+}
+
+function showWaitingScreen() {
+  showOverlay();
+  overlay.innerHTML = `
+    <div class="panel">
+      <h2>Room Created!</h2>
+      <p>Share this code with your opponent:</p>
+      <div class="room-code">${roomCode}</div>
+      ${wagerAmount > 0 ? `<p style="color:#9b59b6;">Wager: ${wagerAmount} MfT${onlineGameId ? ' | Game #' + onlineGameId : ''}</p>` : '<p style="color:#555;">Free Play</p>'}
+      <div id="status-msg" class="status-msg">Waiting for opponent to join...</div>
+      <span class="back-link" onclick="cleanupPeer();showOnlineLobby()">Cancel</span>
+    </div>
+  `;
+}
+
+function showHostWagerScreen() {
+  // Host: opponent connected, show ready button
+  showOverlay();
+  overlay.innerHTML = `
+    <div class="panel">
+      <h2>Opponent Connected!</h2>
+      <div class="room-code">${roomCode}</div>
+      ${wagerAmount > 0 ? `<p style="color:#9b59b6;">Wager: ${wagerAmount} MfT${onlineGameId ? ' | Game #' + onlineGameId : ''}</p>` : '<p style="color:#555;">Free Play</p>'}
+      ${remoteAddress ? `<p style="color:#aaa;font-size:13px;">Opponent: ${remoteAddress.slice(0,6)}...${remoteAddress.slice(-4)}</p>` : ''}
+      <div id="status-msg" class="status-msg success">Opponent joined! Press Ready when set.</div>
+      <button class="menu-btn accent" id="ready-btn" onclick="sendReady();this.disabled=true;this.textContent='Waiting for opponent...';">READY</button>
+      <span class="back-link" onclick="cleanupPeer();showOnlineLobby()">Cancel</span>
+    </div>
+  `;
+}
+
+function showJoinRoom() {
+  showOverlay();
+  overlay.innerHTML = `
+    <div class="panel">
+      <h2>Join Room</h2>
+      <p>Enter the 6-letter room code:</p>
+      <input type="text" class="input-field" id="join-code" maxlength="6" placeholder="ABCDEF" autocomplete="off">
+      <button class="menu-btn accent" onclick="doJoinRoom()">Join</button>
+      <div id="status-msg" class="status-msg"></div>
+      <span class="back-link" onclick="showOnlineLobby()">Cancel</span>
+    </div>
+  `;
+  setTimeout(() => {
+    const el = document.getElementById('join-code');
+    if (el) el.focus();
+  }, 100);
+}
+
+function doJoinRoom() {
+  const code = (document.getElementById('join-code').value || '').toUpperCase().trim();
+  const statusEl = document.getElementById('status-msg');
+  if (code.length !== 6 || !/^[A-Z]{6}$/.test(code)) {
+    statusEl.textContent = 'Enter a valid 6-letter room code.';
+    statusEl.className = 'status-msg error';
+    return;
+  }
+  joinRoom(code);
+}
+
+function showJoinWagerScreen() {
+  // Joiner sees the wager amount from host
+  showOverlay();
+  const needsApproval = wagerAmount > 0 && ESCROW_ADDRESS;
+  overlay.innerHTML = `
+    <div class="panel">
+      <h2>Match Found!</h2>
+      <div class="room-code">${roomCode}</div>
+      ${wagerAmount > 0 ? `<p style="color:#9b59b6;font-size:18px;">Wager: ${wagerAmount} MfT</p>` : '<p style="color:#555;">Free Play</p>'}
+      ${remoteAddress ? `<p style="color:#aaa;font-size:13px;">Host: ${remoteAddress.slice(0,6)}...${remoteAddress.slice(-4)}</p>` : ''}
+      ${onlineGameId ? `<p style="color:#aaa;font-size:12px;">Game #${onlineGameId}</p>` : ''}
+      <div id="status-msg" class="status-msg"></div>
+      <button class="menu-btn accent" id="ready-btn" onclick="doJoinReady()">${needsApproval ? 'Approve & Ready' : 'READY'}</button>
+      <span class="back-link" onclick="cleanupPeer();showOnlineLobby()">Cancel</span>
+    </div>
+  `;
+}
+
+async function doJoinReady() {
+  const btn = document.getElementById('ready-btn');
+  const statusEl = document.getElementById('status-msg');
+
+  if (wagerAmount > 0 && ESCROW_ADDRESS && onlineGameId > 0) {
+    if (!walletAddress) {
+      statusEl.textContent = 'Connect your wallet first (top right button).';
+      statusEl.className = 'status-msg error';
+      return;
+    }
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Approving MfT...';
+      statusEl.textContent = 'Approving tokens and joining game on-chain...';
+      statusEl.className = 'status-msg';
+      await approveAndJoinGame(onlineGameId, wagerAmount);
+      statusEl.textContent = 'Joined on-chain! Waiting for host...';
+      statusEl.className = 'status-msg success';
+    } catch (err) {
+      statusEl.textContent = 'Transaction failed: ' + (err.reason || err.message || err);
+      statusEl.className = 'status-msg error';
+      btn.disabled = false;
+      btn.textContent = 'Approve & Ready';
+      return;
+    }
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Waiting for host...';
+  sendReady();
+}
+
+// --- PRACTICE MODE ---
+function showPracticeSelect() {
+  gameState = 'practice_select';
+  showOverlay();
+
+  let opponentCards = '';
+  for (let i = 0; i < OPPONENTS.length; i++) {
+    const opp = OPPONENTS[i];
+    const defeated = campaignDefeated.includes(i);
+    opponentCards += `
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:#16162e;border-radius:6px;cursor:pointer;border:2px solid ${practiceAiIndex === i ? '#9b59b6' : '#2a2a4e'};margin:3px 0;" onclick="practiceAiIndex=${i};showPracticeSelect()">
+        <div style="width:12px;height:12px;border-radius:50%;background:${opp.color};flex-shrink:0;"></div>
+        <div style="text-align:left;flex:1;">
+          <div style="color:#fff;font-size:14px;font-weight:bold;">${opp.name}</div>
+          <div style="color:#777;font-size:11px;">${opp.title} | AI: ${Math.round(opp.ai * 100)}%</div>
+        </div>
+        ${defeated ? '<span style="color:#2ecc40;font-size:12px;">Defeated</span>' : ''}
+      </div>
+    `;
+  }
+
+  overlay.innerHTML = `
+    <div class="panel" style="max-height:90vh;overflow-y:auto;">
+      <h2>Practice vs AI</h2>
+      <p>Select an opponent:</p>
+      <div style="margin:12px 0;">${opponentCards}</div>
+      <button class="menu-btn accent" onclick="startPractice()">Battle!</button>
+      <span class="back-link" onclick="showTitleScreen()">Back to Title</span>
+    </div>
+  `;
+}
+
+function startPractice() {
+  const opp = OPPONENTS[practiceAiIndex];
+  gameRNG = null; // use Math.random for practice
+  player = new Board(false);
+  ai = new Board(true);
+  player.opponent = ai;
+  ai.opponent = player;
+  ai.aiDifficulty = opp.ai;
+  ai.dropInterval = 60 * opp.speed;
+  currentOpponent = practiceAiIndex;
+  gameState = 'practice';
+  document.getElementById('wager-banner').style.display = 'none';
+  hideOverlay();
+}
+
+// ============================================================
+// GAME OVER HANDLING
+// ============================================================
+function drawGameOver(won) {
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  ctx.textAlign = 'center';
+
+  if (won) {
+    ctx.fillStyle = '#2ecc40';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText('VICTORY!', CANVAS_W / 2, CANVAS_H / 2 - 40);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText('You defeated your opponent!', CANVAS_W / 2, CANVAS_H / 2 + 10);
+    if (wagerAmount > 0) {
+      ctx.fillStyle = '#f1c40f';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(`You won ${wagerAmount * 2} MfT!`, CANVAS_W / 2, CANVAS_H / 2 + 40);
+    }
+  } else {
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText('DEFEATED!', CANVAS_W / 2, CANVAS_H / 2 - 40);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText('Your ooze was overwhelmed!', CANVAS_W / 2, CANVAS_H / 2 + 10);
+    if (wagerAmount > 0) {
+      ctx.fillStyle = '#e74c3c';
+      ctx.font = '16px sans-serif';
+      ctx.fillText(`You lost ${wagerAmount} MfT`, CANVAS_W / 2, CANVAS_H / 2 + 40);
+    }
+  }
+
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = '18px sans-serif';
+  ctx.fillText('Press ENTER to continue', CANVAS_W / 2, CANVAS_H / 2 + 90);
+}
+
+function drawPracticeGameOver(won) {
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  ctx.textAlign = 'center';
+  const opp = OPPONENTS[currentOpponent];
+
+  if (won) {
+    ctx.fillStyle = '#2ecc40';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText('VICTORY!', CANVAS_W / 2, CANVAS_H / 2 - 40);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText(`${opp.name} has been vanquished!`, CANVAS_W / 2, CANVAS_H / 2 + 10);
+  } else {
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText('DEFEATED!', CANVAS_W / 2, CANVAS_H / 2 - 40);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText(`${opp.name} overwhelmed you with ooze!`, CANVAS_W / 2, CANVAS_H / 2 + 10);
+  }
+
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = '18px sans-serif';
+  ctx.fillText('Press ENTER to continue', CANVAS_W / 2, CANVAS_H / 2 + 80);
+}
+
+// ============================================================
+// INPUT HANDLING
+// ============================================================
+const keys = {};
+const keyRepeat = {};
+const KEY_DELAY = 10;
+const KEY_RATE = 3;
+
+document.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  keys[e.code] = true;
+  keyRepeat[e.code] = 0;
+
+  // Title screen Enter
+  if (gameState === 'title' && e.code === 'Enter') {
+    // Do nothing - use buttons
+    return;
+  }
+
+  // Win/Lose states
+  if (gameState === 'win' || gameState === 'lose') {
+    if (e.code === 'Enter') {
+      wagerAmount = 0;
+      onlineGameId = 0;
+      document.getElementById('wager-banner').style.display = 'none';
+      showTitleScreen();
+    }
+    return;
+  }
+
+  if (gameState === 'practice_win' || gameState === 'practice_lose') {
+    if (e.code === 'Enter') {
+      showPracticeSelect();
+    }
+    return;
+  }
+
+  if (gameState !== 'playing' && gameState !== 'practice') return;
+
+  // Game controls (immediate)
+  if (e.code === 'KeyZ') player.rotCCW();
+  if (e.code === 'KeyX') player.rotCW();
+  if (e.code === 'ArrowUp') player.rotCW();
+  if (e.code === 'Space') player.hardDrop();
+});
+
+document.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+  delete keyRepeat[e.code];
+});
+
+function handleInput() {
+  if (gameState !== 'playing' && gameState !== 'practice') return;
+
+  for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowDown']) {
+    if (keys[code]) {
+      keyRepeat[code] = (keyRepeat[code] || 0) + 1;
+      if (keyRepeat[code] === 1 || (keyRepeat[code] > KEY_DELAY && keyRepeat[code] % KEY_RATE === 0)) {
+        if (code === 'ArrowLeft') player.moveLeft();
+        if (code === 'ArrowRight') player.moveRight();
+        if (code === 'ArrowDown') player.softDrop();
+      }
+    }
+  }
+}
+
+// Handle ESC during gameplay
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') {
+    if (gameState === 'playing') {
+      cleanupPeer();
+      wagerAmount = 0;
+      onlineGameId = 0;
+      document.getElementById('wager-banner').style.display = 'none';
+      showTitleScreen();
+    } else if (gameState === 'practice') {
+      showPracticeSelect();
+    }
+  }
+});
+
+// ============================================================
+// MAIN GAME LOOP
+// ============================================================
+function gameLoop() {
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+  if (gameState === 'title' || gameState === 'lobby_create' || gameState === 'lobby_join' ||
+      gameState === 'waiting' || gameState === 'practice_select') {
+    // Draw animated background behind overlay
+    drawTitleBackground();
+  } else if (gameState === 'playing') {
+    // ONLINE PVP MODE
+    handleInput();
+    player.update(1);
+    frameCount++;
+
+    // Send state every 3 frames
+    if (frameCount % 3 === 0) {
+      sendState();
+    }
+
+    // Background
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // Header
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('VS', CANVAS_W / 2, 40);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#3498db';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('YOU', P1_BOARD_X, 35);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 20px sans-serif';
+    const oppLabel = remoteAddress ? remoteAddress.slice(0, 6) + '...' + remoteAddress.slice(-4) : 'Opponent';
+    ctx.fillText(oppLabel, P2_BOARD_X + BOARD_W, 35);
+
+    // Draw local board
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    drawNextPiece(player, P1_BOARD_X - SIDE_W + 10, BOARD_Y + 30, 'NEXT');
+    drawScore(player, P1_BOARD_X - SIDE_W / 2 + 10, BOARD_Y + 180, 'SCORE');
+
+    // Draw remote board from state snapshot
+    if (remoteState) {
+      drawRemoteBoard(remoteState, P2_BOARD_X, BOARD_Y);
+      drawRemoteNext(remoteState, P2_BOARD_X + BOARD_W + 10, BOARD_Y + 30, 'NEXT');
+      drawRemoteScore(remoteState, P2_BOARD_X + BOARD_W + SIDE_W / 2 + 10, BOARD_Y + 180, 'SCORE');
+    } else {
+      // Draw empty board
+      drawRemoteBoard({ grid: Array.from({ length: ROWS }, () => Array(COLS).fill(OOZE.EMPTY)), pendingGarbage: 0 }, P2_BOARD_X, BOARD_Y);
+    }
+
+    // Controls hint
+    ctx.fillStyle = '#444';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Arrows: Move | Z/X: Rotate | Space: Drop | ESC: Quit', CANVAS_W / 2, CANVAS_H - 10);
+
+    // Check win/lose
+    if (remoteState && remoteState.dead && !player.dead) {
+      gameState = 'win';
+      sfxWin();
+      sendState(); // Final state
+      // Report winner to contract
+      if (wagerAmount > 0 && onlineGameId > 0 && ESCROW_ADDRESS) {
+        reportGameWinner(onlineGameId, localAddress);
+      }
+      showOverlay();
+    } else if (player.dead) {
+      gameState = 'lose';
+      sfxLose();
+      sendDead();
+      sendState();
+      // Loser reports winner
+      if (wagerAmount > 0 && onlineGameId > 0 && ESCROW_ADDRESS && remoteAddress) {
+        reportGameWinner(onlineGameId, remoteAddress);
+      }
+      showOverlay();
+    }
+  } else if (gameState === 'practice') {
+    // PRACTICE VS AI MODE
+    handleInput();
+    const opp = OPPONENTS[currentOpponent];
+    player.update(1);
+    ai.update(1);
+
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('VS', CANVAS_W / 2, 40);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#3498db';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('YOU', P1_BOARD_X, 35);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = opp.color;
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText(opp.name, P2_BOARD_X + BOARD_W, 35);
+
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    drawBoard(ai, P2_BOARD_X, BOARD_Y);
+
+    drawNextPiece(player, P1_BOARD_X - SIDE_W + 10, BOARD_Y + 30, 'NEXT');
+    drawNextPiece(ai, P2_BOARD_X + BOARD_W + 10, BOARD_Y + 30, 'NEXT');
+
+    drawScore(player, P1_BOARD_X - SIDE_W / 2 + 10, BOARD_Y + 180, 'SCORE');
+    drawScore(ai, P2_BOARD_X + BOARD_W + SIDE_W / 2 + 10, BOARD_Y + 180, 'SCORE');
+
+    ctx.fillStyle = '#444';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Arrows: Move | Z/X: Rotate | Space: Drop | ESC: Quit', CANVAS_W / 2, CANVAS_H - 10);
+
+    if (ai.dead) {
+      gameState = 'practice_win';
+      sfxWin();
+      if (!campaignDefeated.includes(currentOpponent)) {
+        campaignDefeated.push(currentOpponent);
+      }
+    } else if (player.dead) {
+      gameState = 'practice_lose';
+      sfxLose();
+    }
+  } else if (gameState === 'win') {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    if (remoteState) drawRemoteBoard(remoteState, P2_BOARD_X, BOARD_Y);
+    drawGameOver(true);
+  } else if (gameState === 'lose') {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    if (remoteState) drawRemoteBoard(remoteState, P2_BOARD_X, BOARD_Y);
+    drawGameOver(false);
+  } else if (gameState === 'practice_win') {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    drawBoard(ai, P2_BOARD_X, BOARD_Y);
+    drawPracticeGameOver(true);
+  } else if (gameState === 'practice_lose') {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    drawBoard(ai, P2_BOARD_X, BOARD_Y);
+    drawPracticeGameOver(false);
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+function drawTitleBackground() {
+  if (bgImage.complete && bgImage.naturalWidth) {
+    const scale = Math.max(CANVAS_W / bgImage.width, CANVAS_H / bgImage.height);
+    const w = bgImage.width * scale;
+    const h = bgImage.height * scale;
+    ctx.drawImage(bgImage, (CANVAS_W - w) / 2, (CANVAS_H - h) / 2, w, h);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  } else {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  }
+
+  const t = Date.now() / 1000;
+  for (let i = 1; i <= 5; i++) {
+    const ox = CANVAS_W / 2 + Math.cos(t * 0.4 + i * 1.3) * 280;
+    const oy = CANVAS_H / 2 + Math.sin(t * 0.3 + i * 1.1) * 150;
+    drawOoze(ox - 20, oy - 20, i, 30, 0.2, 1.5);
+  }
+}
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
+showTitleScreen();
+gameLoop();
+</script>
+</body>
+</html>

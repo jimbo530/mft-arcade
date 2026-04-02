@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ooze Battle</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+    overflow: hidden;
+  }
+  canvas { display: block; image-rendering: pixelated; }
+  #game-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="gameCanvas"></canvas>
+</div>
+
+<script>
+// ============================================================
+// OOZE BATTLE - A Fantasy Puyo Puyo Clone
+// ============================================================
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- CONSTANTS ---
+const COLS = 6;
+const ROWS = 13; // row 0 is hidden
+const CELL = 40;
+const BOARD_W = COLS * CELL;
+const BOARD_H = (ROWS - 1) * CELL; // visible rows
+const GAP = 160; // gap between boards
+const SIDE_W = 120; // side panel width
+const CANVAS_W = SIDE_W + BOARD_W + GAP + BOARD_W + SIDE_W;
+const CANVAS_H = BOARD_H + 100; // extra for header
+const HEADER_H = 60;
+const BOARD_Y = HEADER_H + 20;
+
+canvas.width = CANVAS_W;
+canvas.height = CANVAS_H;
+
+// Board X positions
+const P1_BOARD_X = SIDE_W;
+const P2_BOARD_X = SIDE_W + BOARD_W + GAP;
+
+// --- OOZE TYPES ---
+const OOZE = {
+  EMPTY: 0,
+  GREEN_SLIME: 1,
+  RED_MAGMA: 2,
+  BLUE_WATER: 3,
+  YELLOW_ACID: 4,
+  PURPLE_VOID: 5,
+  ATTACK: 6
+};
+
+const OOZE_COLORS = {
+  [OOZE.GREEN_SLIME]:  { main: '#2ecc40', dark: '#1a7a26', light: '#5dfc70', name: 'Green Slime' },
+  [OOZE.RED_MAGMA]:    { main: '#e74c3c', dark: '#962d22', light: '#ff7b6b', name: 'Red Magma' },
+  [OOZE.BLUE_WATER]:   { main: '#3498db', dark: '#1a5276', light: '#6dc0f0', name: 'Blue Water' },
+  [OOZE.YELLOW_ACID]:  { main: '#f1c40f', dark: '#9a7d0a', light: '#f9e154', name: 'Yellow Acid' },
+  [OOZE.PURPLE_VOID]:  { main: '#9b59b6', dark: '#6c3483', light: '#c39bd3', name: 'Purple Void' },
+  [OOZE.ATTACK]:       { main: '#7f8c8d', dark: '#4a5354', light: '#a4b0b1', name: 'Attack Ooze' }
+};
+
+const NUM_COLORS = 5; // playable ooze types (1-5)
+
+// --- SPRITE IMAGES ---
+// Map ooze type -> Image object (if a sprite exists, it's used instead of procedural drawing)
+const OOZE_SPRITES = {};
+
+function loadSprite(oozeType, src) {
+  const img = new Image();
+  img.src = src;
+  img.onload = () => { OOZE_SPRITES[oozeType] = img; };
+}
+
+// Load sprites
+loadSprite(OOZE.GREEN_SLIME, 'assets/green_slime.png');
+loadSprite(OOZE.RED_MAGMA, 'assets/red_magma.png');
+loadSprite(OOZE.BLUE_WATER, 'assets/blue_water.png');
+loadSprite(OOZE.YELLOW_ACID, 'assets/yellow_acid.png');
+loadSprite(OOZE.PURPLE_VOID, 'assets/purple_void.png');
+
+// --- BACKGROUND IMAGE ---
+const bgImage = new Image();
+bgImage.src = 'assets/background.webp';
+
+// --- CAMPAIGN OPPONENTS ---
+const OPPONENTS = [
+  { name: 'Gloop the Timid',    color: '#2ecc40', speed: 1.0,  ai: 0.15, title: 'Swamp Apprentice',   taunt: "P-please don't splash me...",              portrait: 'assets/opponents/gloop.webp' },
+  { name: 'Ember Wyrm',         color: '#e74c3c', speed: 0.9,  ai: 0.25, title: 'Lava Hatchling',     taunt: "My flames will melt your ooze!",            portrait: 'assets/opponents/ember_wyrm.png' },
+  { name: 'Tidecaller Myra',    color: '#3498db', speed: 0.85, ai: 0.35, title: 'Reef Sorceress',     taunt: "The tides obey only me.",                   portrait: 'assets/opponents/tidecaller_myra.png' },
+  { name: 'Baron Corrosive',    color: '#f1c40f', speed: 0.75, ai: 0.45, title: 'Acid Alchemist',     taunt: "My concoctions eat through anything!",      portrait: 'assets/opponents/baron_corrosive.png' },
+  { name: 'Vexia Shadowmeld',   color: '#9b59b6', speed: 0.7,  ai: 0.55, title: 'Void Enchantress',   taunt: "You cannot see what lurks in the void...",  portrait: 'assets/opponents/vexia_shadowmeld.png' },
+  { name: 'Gorgath the Fused',  color: '#1abc9c', speed: 0.65, ai: 0.6,  title: 'Chimera Oozelord',   taunt: "I am ALL the oozes combined!",              portrait: 'assets/opponents/gorgath.png' },
+  { name: 'Sludge Queen Mara',  color: '#e67e22', speed: 0.55, ai: 0.7,  title: 'Bog Monarch',        taunt: "My swamp. My rules.",                       portrait: 'assets/opponents/sludge_queen.png' },
+  { name: 'Dreadmire',          color: '#c0392b', speed: 0.5,  ai: 0.75, title: 'Ancient Ooze Titan', taunt: "I have dissolved empires.",                 portrait: 'assets/opponents/dreadmire.png' },
+  { name: 'The Prismatic Ooze', color: '#fff',    speed: 0.4,  ai: 0.85, title: 'Living Rainbow',     taunt: "Every color... every power... MINE.",       portrait: 'assets/opponents/prismatic.png' },
+  { name: 'Dr. Oozenheim',      color: '#2c3e50', speed: 0.35, ai: 0.92, title: 'Mad Ooze Architect', taunt: "I CREATED the ooze. I control it ALL!",     portrait: 'assets/opponents/dr_oozenheim.png' },
+];
+
+// Preload opponent portraits
+const OPPONENT_PORTRAITS = {};
+for (const opp of OPPONENTS) {
+  const img = new Image();
+  img.src = opp.portrait;
+  img.onload = () => { OPPONENT_PORTRAITS[opp.name] = img; };
+}
+
+// --- GAME STATE ---
+let gameState = 'title'; // title, select, playing, paused, win, lose, chain_anim
+let currentOpponent = 0;
+let campaignDefeated = [];
+
+// --- SOUND (simple oscillator beeps) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound(freq, duration, type = 'square', vol = 0.1) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.value = vol;
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function sfxPop() { playSound(600, 0.1, 'sine', 0.12); }
+function sfxChain(n) { playSound(400 + n * 150, 0.15, 'sine', 0.15); }
+function sfxDrop() { playSound(150, 0.08, 'triangle', 0.08); }
+function sfxGarbage() { playSound(100, 0.2, 'sawtooth', 0.08); }
+function sfxLose() { playSound(200, 0.5, 'sawtooth', 0.1); }
+function sfxWin() {
+  [523, 659, 784, 1047].forEach((f, i) => {
+    setTimeout(() => playSound(f, 0.3, 'sine', 0.12), i * 150);
+  });
+}
+
+// --- BOARD CLASS ---
+class Board {
+  constructor(isAI = false) {
+    this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(OOZE.EMPTY));
+    this.current = null;    // falling pair
+    this.next = null;       // next pair
+    this.isAI = isAI;
+    this.score = 0;
+    this.chainCount = 0;
+    this.pendingGarbage = 0;
+    this.dropTimer = 0;
+    this.dropInterval = 60; // frames between drops (1 second at 60fps)
+    this.lockDelay = 0;
+    this.animating = false;
+    this.popAnim = [];      // cells being popped
+    this.popFrame = 0;
+    this.dead = false;
+    this.allClear = false;
+    this.opponent = null;   // reference to opponent board
+
+    // AI state
+    this.aiMoveDecided = false;
+    this.aiTargetCol = 3;
+    this.aiTargetRot = 0;
+    this.aiMoveTimer = 0;
+    this.aiDifficulty = 0.5; // 0 = random, 1 = perfect
+
+    this.spawnNext();
+    this.spawnNext();
+  }
+
+  spawnNext() {
+    this.current = this.next;
+    this.next = {
+      colors: [randOoze(), randOoze()],
+      col: 2,
+      row: 0,
+      rotation: 0 // 0=up, 1=right, 2=down, 3=left (second blob relative to first)
+    };
+    if (this.current) {
+      this.current.col = 2;
+      this.current.row = 0;
+      this.current.rotation = 0;
+      // Check if spawn position is blocked
+      if (this.grid[0][2] !== OOZE.EMPTY || this.grid[0][3] !== OOZE.EMPTY) {
+        this.dead = true;
+      }
+    }
+    this.dropTimer = 0;
+    this.lockDelay = 0;
+    this.aiMoveDecided = false;
+  }
+
+  getSecondPos(piece) {
+    const offsets = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // up, right, down, left
+    const [dc, dr] = offsets[piece.rotation];
+    return { col: piece.col + dc, row: piece.row + dr };
+  }
+
+  isValid(col, row) {
+    return col >= 0 && col < COLS && row >= 0 && row < ROWS;
+  }
+
+  isFree(col, row) {
+    return this.isValid(col, row) && this.grid[row][col] === OOZE.EMPTY;
+  }
+
+  canPlace(piece) {
+    const s = this.getSecondPos(piece);
+    return this.isFree(piece.col, piece.row) && this.isFree(s.col, s.row);
+  }
+
+  moveLeft() {
+    if (!this.current || this.animating) return;
+    const test = { ...this.current, col: this.current.col - 1 };
+    if (this.canPlace(test)) { this.current.col--; }
+  }
+
+  moveRight() {
+    if (!this.current || this.animating) return;
+    const test = { ...this.current, col: this.current.col + 1 };
+    if (this.canPlace(test)) { this.current.col++; }
+  }
+
+  rotCW() {
+    if (!this.current || this.animating) return;
+    const test = { ...this.current, rotation: (this.current.rotation + 1) % 4 };
+    if (this.canPlace(test)) {
+      this.current.rotation = test.rotation;
+    } else {
+      // Wall kick
+      const kicks = [
+        { col: test.col - 1 }, { col: test.col + 1 },
+        { col: test.col, row: test.row - 1 }
+      ];
+      for (const kick of kicks) {
+        const t2 = { ...test, ...kick };
+        if (this.canPlace(t2)) {
+          Object.assign(this.current, t2);
+          this.current.rotation = test.rotation;
+          return;
+        }
+      }
+    }
+  }
+
+  rotCCW() {
+    if (!this.current || this.animating) return;
+    const test = { ...this.current, rotation: (this.current.rotation + 3) % 4 };
+    if (this.canPlace(test)) {
+      this.current.rotation = test.rotation;
+    } else {
+      const kicks = [
+        { col: test.col - 1 }, { col: test.col + 1 },
+        { col: test.col, row: test.row - 1 }
+      ];
+      for (const kick of kicks) {
+        const t2 = { ...test, ...kick };
+        if (this.canPlace(t2)) {
+          Object.assign(this.current, t2);
+          this.current.rotation = test.rotation;
+          return;
+        }
+      }
+    }
+  }
+
+  hardDrop() {
+    if (!this.current || this.animating) return;
+    while (this.dropOne()) {}
+    this.lockPiece();
+  }
+
+  softDrop() {
+    if (!this.current || this.animating) return;
+    if (this.dropOne()) {
+      this.score += 1;
+    } else {
+      this.lockPiece();
+    }
+    this.dropTimer = 0;
+  }
+
+  dropOne() {
+    if (!this.current) return false;
+    const test = { ...this.current, row: this.current.row + 1 };
+    if (this.canPlace(test)) {
+      this.current.row++;
+      return true;
+    }
+    return false;
+  }
+
+  lockPiece() {
+    if (!this.current) return;
+    const s = this.getSecondPos(this.current);
+    if (this.isValid(this.current.col, this.current.row))
+      this.grid[this.current.row][this.current.col] = this.current.colors[0];
+    if (this.isValid(s.col, s.row))
+      this.grid[s.row][s.col] = this.current.colors[1];
+    this.current = null;
+    sfxDrop();
+    this.applyGravity();
+    this.chainCount = 0;
+    this.resolveChains();
+  }
+
+  applyGravity() {
+    for (let c = 0; c < COLS; c++) {
+      let writeRow = ROWS - 1;
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (this.grid[r][c] !== OOZE.EMPTY) {
+          if (writeRow !== r) {
+            this.grid[writeRow][c] = this.grid[r][c];
+            this.grid[r][c] = OOZE.EMPTY;
+          }
+          writeRow--;
+        }
+      }
+    }
+  }
+
+  findMatches() {
+    const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+    const groups = [];
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (visited[r][c] || this.grid[r][c] === OOZE.EMPTY || this.grid[r][c] === OOZE.ATTACK) continue;
+        const color = this.grid[r][c];
+        const group = [];
+        const stack = [{ r, c }];
+        while (stack.length) {
+          const { r: cr, c: cc } = stack.pop();
+          if (cr < 0 || cr >= ROWS || cc < 0 || cc >= COLS) continue;
+          if (visited[cr][cc]) continue;
+          if (this.grid[cr][cc] !== color) continue;
+          visited[cr][cc] = true;
+          group.push({ r: cr, c: cc });
+          stack.push({ r: cr - 1, c: cc }, { r: cr + 1, c: cc }, { r: cr, c: cc - 1 }, { r: cr, c: cc + 1 });
+        }
+        if (group.length >= 4) {
+          groups.push({ color, cells: group });
+        }
+      }
+    }
+    return groups;
+  }
+
+  resolveChains() {
+    const matches = this.findMatches();
+    if (matches.length === 0) {
+      // No more chains, add pending garbage
+      if (this.pendingGarbage > 0) {
+        this.addGarbage(this.pendingGarbage);
+        this.pendingGarbage = 0;
+      }
+      // Spawn next piece
+      this.spawnNext();
+      return;
+    }
+
+    this.chainCount++;
+    this.animating = true;
+    this.popAnim = [];
+    this.popFrame = 0;
+
+    let cellsCleared = 0;
+    const garbageToRemove = new Set();
+
+    for (const group of matches) {
+      for (const { r, c } of group.cells) {
+        this.popAnim.push({ r, c, color: this.grid[r][c] });
+        this.grid[r][c] = OOZE.EMPTY;
+        cellsCleared++;
+
+        // Check adjacent garbage
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [dr, dc] of dirs) {
+          const nr = r + dr, nc = c + dc;
+          if (this.isValid(nc, nr) && this.grid[nr][nc] === OOZE.ATTACK) {
+            garbageToRemove.add(`${nr},${nc}`);
+          }
+        }
+      }
+    }
+
+    // Remove adjacent garbage
+    for (const key of garbageToRemove) {
+      const [gr, gc] = key.split(',').map(Number);
+      this.popAnim.push({ r: gr, c: gc, color: OOZE.ATTACK });
+      this.grid[gr][gc] = OOZE.EMPTY;
+    }
+
+    // Score: chain power increases exponentially
+    const chainPower = Math.pow(2, this.chainCount - 1);
+    const points = cellsCleared * 10 * chainPower;
+    this.score += points;
+
+    // Send attack ooze to opponent
+    // 5 matched = 1, 6 matched = 2, etc. (nothing for base match of 4)
+    // Each combo in the chain: +1 and multiply
+    let attackOoze = Math.max(0, cellsCleared - 4); // 5=1, 6=2, 7=3...
+    if (this.chainCount > 1) {
+      attackOoze = (attackOoze + 1) * this.chainCount; // combos add 1 then multiply
+    }
+    if (this.opponent && attackOoze > 0) {
+      // Offset against our own pending attack ooze first
+      if (this.pendingGarbage > 0) {
+        const offset = Math.min(this.pendingGarbage, attackOoze);
+        this.pendingGarbage -= offset;
+        const remaining = attackOoze - offset;
+        if (remaining > 0) this.opponent.pendingGarbage += remaining;
+      } else {
+        this.opponent.pendingGarbage += attackOoze;
+      }
+    }
+
+    sfxChain(this.chainCount);
+
+    // Animation delay, then continue resolving
+    setTimeout(() => {
+      this.animating = false;
+      this.popAnim = [];
+      this.applyGravity();
+      this.resolveChains(); // check for more chains
+    }, 400);
+  }
+
+  addGarbage(count) {
+    sfxGarbage();
+    // Drop garbage rows from the TOP, one row at a time
+    // Each row has one random hole (like the original Mean Bean Machine)
+    const rows = Math.ceil(count / COLS);
+    for (let i = 0; i < rows; i++) {
+      const garbageInRow = (i === rows - 1) ? (count % COLS || COLS) : COLS;
+      const hole = Math.floor(Math.random() * COLS);
+      // Place garbage in row 0 (top hidden row) then let gravity pull it down
+      for (let c = 0; c < COLS; c++) {
+        if (c === hole || c >= garbageInRow) {
+          // hole or partial row - skip
+        } else {
+          // Find the lowest empty cell in this column
+          let landRow = -1;
+          for (let r = ROWS - 1; r >= 0; r--) {
+            if (this.grid[r][c] === OOZE.EMPTY) {
+              landRow = r;
+              break;
+            }
+          }
+          if (landRow >= 0) {
+            this.grid[landRow][c] = OOZE.ATTACK;
+          }
+        }
+      }
+    }
+    // Check if dead (top rows blocked)
+    if (this.grid[0][2] !== OOZE.EMPTY || this.grid[0][3] !== OOZE.EMPTY) {
+      this.dead = true;
+    }
+  }
+
+  // --- AI LOGIC ---
+  aiThink() {
+    if (this.aiMoveDecided || !this.current || this.animating) return;
+
+    const difficulty = this.aiDifficulty;
+
+    // Random chance to just play randomly (lower difficulty)
+    if (Math.random() > difficulty) {
+      this.aiTargetCol = Math.floor(Math.random() * COLS);
+      this.aiTargetRot = Math.floor(Math.random() * 4);
+      this.aiMoveDecided = true;
+      return;
+    }
+
+    // Evaluate all possible placements
+    let bestScore = -Infinity;
+    let bestCol = 2;
+    let bestRot = 0;
+
+    for (let rot = 0; rot < 4; rot++) {
+      for (let col = 0; col < COLS; col++) {
+        const testPiece = { ...this.current, col, rotation: rot };
+        const s = this.getSecondPos(testPiece);
+
+        if (!this.isValid(testPiece.col, testPiece.row) || !this.isValid(s.col, s.row)) continue;
+
+        // Simulate drop
+        const simGrid = this.grid.map(r => [...r]);
+        const dropPiece = { ...testPiece };
+
+        // Drop to lowest position
+        let canDrop = true;
+        while (canDrop) {
+          const next = { ...dropPiece, row: dropPiece.row + 1 };
+          const ns = this.getSecondPos(next);
+          if (this.isValid(next.col, next.row) && this.isValid(ns.col, ns.row) &&
+              simGrid[next.row][next.col] === OOZE.EMPTY && simGrid[ns.row][ns.col] === OOZE.EMPTY) {
+            dropPiece.row = next.row;
+          } else {
+            canDrop = false;
+          }
+        }
+
+        const finalS = this.getSecondPos(dropPiece);
+        if (!this.isValid(dropPiece.col, dropPiece.row) || !this.isValid(finalS.col, finalS.row)) continue;
+        if (simGrid[dropPiece.row][dropPiece.col] !== OOZE.EMPTY || simGrid[finalS.row][finalS.col] !== OOZE.EMPTY) continue;
+
+        simGrid[dropPiece.row][dropPiece.col] = this.current.colors[0];
+        simGrid[finalS.row][finalS.col] = this.current.colors[1];
+
+        // Evaluate position
+        let score = 0;
+
+        // Prefer lower placements
+        score += dropPiece.row * 2;
+
+        // Check for matches and chains
+        const chains = this.simFindMatches(simGrid);
+        if (chains.length > 0) {
+          let totalCells = 0;
+          for (const g of chains) totalCells += g.cells.length;
+          score += totalCells * 20;
+          score += chains.length * 30; // bonus for chain potential
+        }
+
+        // Adjacency bonus: prefer placing next to same color
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [pr, pc] of [[dropPiece.row, dropPiece.col], [finalS.row, finalS.col]]) {
+          const myColor = simGrid[pr][pc];
+          for (const [dr, dc] of dirs) {
+            const nr = pr + dr, nc = pc + dc;
+            if (this.isValid(nc, nr) && simGrid[nr][nc] === myColor) {
+              score += 8;
+            }
+          }
+        }
+
+        // Penalize height
+        for (let c2 = 0; c2 < COLS; c2++) {
+          for (let r2 = 0; r2 < ROWS; r2++) {
+            if (simGrid[r2][c2] !== OOZE.EMPTY) {
+              score -= (ROWS - r2) * 0.5;
+              break;
+            }
+          }
+        }
+
+        // Heavily penalize blocking column 2/3 (death columns)
+        if (simGrid[1][2] !== OOZE.EMPTY) score -= 100;
+        if (simGrid[1][3] !== OOZE.EMPTY) score -= 100;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestCol = col;
+          bestRot = rot;
+        }
+      }
+    }
+
+    this.aiTargetCol = bestCol;
+    this.aiTargetRot = bestRot;
+    this.aiMoveDecided = true;
+  }
+
+  simFindMatches(grid) {
+    const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+    const groups = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (visited[r][c] || grid[r][c] === OOZE.EMPTY || grid[r][c] === OOZE.ATTACK) continue;
+        const color = grid[r][c];
+        const group = [];
+        const stack = [{ r, c }];
+        while (stack.length) {
+          const { r: cr, c: cc } = stack.pop();
+          if (cr < 0 || cr >= ROWS || cc < 0 || cc >= COLS) continue;
+          if (visited[cr][cc] || grid[cr][cc] !== color) continue;
+          visited[cr][cc] = true;
+          group.push({ r: cr, c: cc });
+          stack.push({ r: cr - 1, c: cc }, { r: cr + 1, c: cc }, { r: cr, c: cc - 1 }, { r: cr, c: cc + 1 });
+        }
+        if (group.length >= 4) groups.push({ color, cells: group });
+      }
+    }
+    return groups;
+  }
+
+  aiAct() {
+    if (!this.current || this.animating || !this.aiMoveDecided) return;
+
+    this.aiMoveTimer++;
+    const moveSpeed = 4; // frames between AI moves
+
+    if (this.aiMoveTimer < moveSpeed) return;
+    this.aiMoveTimer = 0;
+
+    // First rotate to target
+    if (this.current.rotation !== this.aiTargetRot) {
+      this.rotCW();
+      return;
+    }
+
+    // Then move to target column
+    if (this.current.col < this.aiTargetCol) {
+      this.moveRight();
+    } else if (this.current.col > this.aiTargetCol) {
+      this.moveLeft();
+    }
+    // If in position, just let it fall naturally (or soft drop for harder AI)
+    else if (this.aiDifficulty > 0.5) {
+      this.softDrop();
+    }
+  }
+
+  update(speedMult = 1) {
+    if (this.dead || this.animating) return;
+    if (!this.current) return;
+
+    if (this.isAI) {
+      this.aiThink();
+      this.aiAct();
+    }
+
+    this.dropTimer++;
+    if (this.dropTimer >= this.dropInterval * speedMult) {
+      this.dropTimer = 0;
+      if (!this.dropOne()) {
+        this.lockDelay++;
+        if (this.lockDelay >= 2) {
+          this.lockPiece();
+          this.lockDelay = 0;
+        }
+      } else {
+        this.lockDelay = 0;
+      }
+    }
+  }
+}
+
+function randOoze() {
+  return Math.floor(Math.random() * NUM_COLORS) + 1;
+}
+
+// --- RENDERING ---
+function drawOoze(x, y, type, size = CELL - 4, alpha = 1, wiggle = 0) {
+  if (type === OOZE.EMPTY) return;
+  const colors = OOZE_COLORS[type];
+  if (!colors) return;
+
+  const cx = x + CELL / 2;
+  const cy = y + CELL / 2;
+  const r = size / 2;
+
+  ctx.save();
+
+  // Use sprite image if available
+  if (OOZE_SPRITES[type]) {
+    ctx.globalAlpha = alpha;
+    const wobble = Math.sin(Date.now() / 200 + x + y) * wiggle;
+    const s = size + 4; // slightly larger to fill cell
+    ctx.drawImage(OOZE_SPRITES[type], cx - s / 2, cy - s / 2 + wobble, s, s);
+    ctx.restore();
+    return;
+  }
+  ctx.globalAlpha = alpha;
+
+  // Ooze body (blobby circle)
+  const wobble = Math.sin(Date.now() / 200 + x + y) * wiggle;
+
+  ctx.beginPath();
+  // Draw a blobby shape
+  for (let a = 0; a < Math.PI * 2; a += 0.1) {
+    const blobR = r + Math.sin(a * 3 + Date.now() / 300) * 2 * (wiggle + 0.5);
+    const px = cx + Math.cos(a) * blobR;
+    const py = cy + Math.sin(a) * blobR + wobble;
+    if (a === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+
+  // Gradient fill
+  const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r);
+  grad.addColorStop(0, colors.light);
+  grad.addColorStop(0.7, colors.main);
+  grad.addColorStop(1, colors.dark);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Outline
+  ctx.strokeStyle = colors.dark;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Eyes (not for garbage)
+  if (type !== OOZE.ATTACK) {
+    const eyeOffX = r * 0.25;
+    const eyeY = cy - r * 0.1 + wobble;
+    const eyeR = r * 0.18;
+    const pupilR = r * 0.1;
+
+    // Eye whites
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx - eyeOffX, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.arc(cx + eyeOffX, eyeY, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pupils (look slightly down)
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(cx - eyeOffX, eyeY + 1, pupilR, 0, Math.PI * 2);
+    ctx.arc(cx + eyeOffX, eyeY + 1, pupilR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mouth - little smile
+    ctx.beginPath();
+    ctx.arc(cx, cy + r * 0.3 + wobble, r * 0.2, 0, Math.PI);
+    ctx.strokeStyle = colors.dark;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else {
+    // Garbage: X pattern
+    ctx.strokeStyle = colors.dark;
+    ctx.lineWidth = 2;
+    const s = r * 0.3;
+    ctx.beginPath();
+    ctx.moveTo(cx - s, cy - s); ctx.lineTo(cx + s, cy + s);
+    ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
+    ctx.stroke();
+  }
+
+  // Shine
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.25, cy - r * 0.3, r * 0.15, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255,255,255,${0.4 * alpha})`;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawBoard(board, bx, by) {
+  // Board background
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(bx, by, BOARD_W, BOARD_H);
+
+  // Grid lines
+  ctx.strokeStyle = '#2a2a4e';
+  ctx.lineWidth = 0.5;
+  for (let r = 0; r < ROWS - 1; r++) {
+    for (let c = 0; c < COLS; c++) {
+      ctx.strokeRect(bx + c * CELL, by + r * CELL, CELL, CELL);
+    }
+  }
+
+  // Board border
+  ctx.strokeStyle = '#4a4a7e';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(bx - 1, by - 1, BOARD_W + 2, BOARD_H + 2);
+
+  // Grid contents (skip row 0 - hidden)
+  for (let r = 1; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (board.grid[r][c] !== OOZE.EMPTY) {
+        drawOoze(bx + c * CELL, by + (r - 1) * CELL, board.grid[r][c], CELL - 4, 1, 0.5);
+      }
+    }
+  }
+
+  // Pop animation
+  if (board.popAnim.length > 0) {
+    board.popFrame++;
+    const progress = board.popFrame / 24;
+    for (const { r, c, color } of board.popAnim) {
+      if (r === 0) continue;
+      const alpha = 1 - progress;
+      const size = (CELL - 4) * (1 + progress * 0.5);
+      drawOoze(bx + c * CELL, by + (r - 1) * CELL, color, size, alpha, 2);
+    }
+  }
+
+  // Current piece
+  if (board.current && !board.animating) {
+    const p = board.current;
+    const s = board.getSecondPos(p);
+    if (p.row >= 1) drawOoze(bx + p.col * CELL, by + (p.row - 1) * CELL, p.colors[0], CELL - 4, 1, 1);
+    if (s.row >= 1) drawOoze(bx + s.col * CELL, by + (s.row - 1) * CELL, p.colors[1], CELL - 4, 1, 1);
+
+    // Ghost piece
+    const ghost = { ...p };
+    while (true) {
+      const next = { ...ghost, row: ghost.row + 1 };
+      const ns = board.getSecondPos(next);
+      if (board.isFree(next.col, next.row) && board.isFree(ns.col, ns.row)) {
+        ghost.row = next.row;
+      } else break;
+    }
+    if (ghost.row !== p.row) {
+      const gs = board.getSecondPos(ghost);
+      if (ghost.row >= 1) drawOoze(bx + ghost.col * CELL, by + (ghost.row - 1) * CELL, p.colors[0], CELL - 6, 0.25, 0);
+      if (gs.row >= 1) drawOoze(bx + gs.col * CELL, by + (gs.row - 1) * CELL, p.colors[1], CELL - 6, 0.25, 0);
+    }
+  }
+
+  // Pending garbage indicator
+  if (board.pendingGarbage > 0) {
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`! ${board.pendingGarbage} ATTACK OOZE !`, bx + BOARD_W / 2, by - 8);
+  }
+}
+
+function drawNextPiece(board, x, y, label) {
+  ctx.fillStyle = '#ccc';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x + CELL, y - 5);
+
+  ctx.fillStyle = '#16162e';
+  ctx.fillRect(x, y, CELL * 2, CELL * 2.5);
+  ctx.strokeStyle = '#4a4a7e';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, CELL * 2, CELL * 2.5);
+
+  if (board.next) {
+    drawOoze(x + CELL / 2, y + 10, board.next.colors[0], CELL - 8, 1, 0.3);
+    drawOoze(x + CELL / 2, y + 10 + CELL, board.next.colors[1], CELL - 8, 1, 0.3);
+  }
+}
+
+function drawScore(board, x, y, name) {
+  ctx.fillStyle = '#aaa';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(name, x, y);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText(board.score.toString(), x, y + 24);
+
+  if (board.chainCount > 1) {
+    ctx.fillStyle = '#f1c40f';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText(`${board.chainCount} CHAIN!`, x, y + 48);
+  }
+}
+
+function drawTitle() {
+  // Background image
+  if (bgImage.complete && bgImage.naturalWidth) {
+    // Cover the canvas while maintaining aspect ratio
+    const scale = Math.max(CANVAS_W / bgImage.width, CANVAS_H / bgImage.height);
+    const w = bgImage.width * scale;
+    const h = bgImage.height * scale;
+    ctx.drawImage(bgImage, (CANVAS_W - w) / 2, (CANVAS_H - h) / 2, w, h);
+    // Dark overlay so text is readable
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  } else {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  }
+
+  // Title
+  const t = Date.now() / 1000;
+  const colors = ['#2ecc40', '#e74c3c', '#3498db', '#f1c40f', '#9b59b6'];
+  const title = 'OOZE BATTLE';
+
+  ctx.font = 'bold 64px sans-serif';
+  ctx.textAlign = 'center';
+
+  // Shadow
+  ctx.fillStyle = '#000';
+  ctx.fillText(title, CANVAS_W / 2 + 3, 120 + 3);
+
+  // Colored letters
+  let xPos = CANVAS_W / 2 - ctx.measureText(title).width / 2;
+  for (let i = 0; i < title.length; i++) {
+    const color = colors[(i + Math.floor(t * 2)) % colors.length];
+    const yOff = Math.sin(t * 3 + i * 0.5) * 5;
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    ctx.fillText(title[i], xPos, 120 + yOff);
+    xPos += ctx.measureText(title[i]).width;
+  }
+
+  // Subtitle
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ddd';
+  ctx.font = '20px sans-serif';
+  ctx.fillText('A Fantasy Puzzle Battle', CANVAS_W / 2, 160);
+
+  // Floating oozes
+  for (let i = 1; i <= 5; i++) {
+    const ox = CANVAS_W / 2 + Math.cos(t + i * 1.3) * 200;
+    const oy = 260 + Math.sin(t * 0.8 + i * 1.1) * 40;
+    drawOoze(ox - 20, oy - 20, i, 36, 0.8, 1.5);
+  }
+
+  // Menu
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.fillText('CAMPAIGN', CANVAS_W / 2, 380);
+  ctx.font = '16px sans-serif';
+  ctx.fillStyle = '#ccc';
+  ctx.fillText('Defeat 10 ooze masters!', CANVAS_W / 2, 410);
+
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = '18px sans-serif';
+  ctx.fillText('Press ENTER to start', CANVAS_W / 2, 470);
+
+  // Controls
+  ctx.fillStyle = '#555';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Arrow Keys: Move/Drop  |  Z: Rotate Left  |  X: Rotate Right  |  Space: Hard Drop', CANVAS_W / 2, CANVAS_H - 30);
+}
+
+function drawOpponentSelect() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  const opp = OPPONENTS[currentOpponent];
+
+  ctx.textAlign = 'center';
+
+  // Stage number
+  ctx.fillStyle = '#7f8c8d';
+  ctx.font = '18px sans-serif';
+  ctx.fillText(`~ Stage ${currentOpponent + 1} of ${OPPONENTS.length} ~`, CANVAS_W / 2, 50);
+
+  // Opponent portrait
+  const portraitY = 120;
+  const pcx = CANVAS_W / 2, pcy = portraitY;
+  const portraitImg = OPPONENT_PORTRAITS[opp.name];
+  if (portraitImg) {
+    // Draw portrait image in a circular frame
+    const pr = 60;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(portraitImg, pcx - pr, pcy - pr, pr * 2, pr * 2);
+    ctx.restore();
+    // Border ring
+    ctx.beginPath();
+    ctx.arc(pcx, pcy, pr + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = opp.color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  } else {
+    // Fallback: procedural blob
+    ctx.save();
+    const pr = 50;
+    ctx.beginPath();
+    for (let a = 0; a < Math.PI * 2; a += 0.05) {
+      const blobR = pr + Math.sin(a * 4 + Date.now() / 200) * 5;
+      const px = pcx + Math.cos(a) * blobR;
+      const py = pcy + Math.sin(a) * blobR;
+      if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    const grad = ctx.createRadialGradient(pcx - 15, pcy - 15, 5, pcx, pcy, pr);
+    grad.addColorStop(0, '#fff'); grad.addColorStop(0.5, opp.color); grad.addColorStop(1, '#000');
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.strokeStyle = opp.color; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.beginPath();
+    ctx.arc(pcx - 15, pcy - 5, 10, 0, Math.PI * 2); ctx.arc(pcx + 15, pcy - 5, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.beginPath();
+    ctx.arc(pcx - 15, pcy - 3, 5, 0, Math.PI * 2); ctx.arc(pcx + 15, pcy - 3, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Name and title
+  ctx.fillStyle = opp.color;
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillText(opp.name, CANVAS_W / 2, 210);
+
+  ctx.fillStyle = '#aaa';
+  ctx.font = '18px sans-serif';
+  ctx.fillText(opp.title, CANVAS_W / 2, 240);
+
+  // Taunt
+  ctx.fillStyle = '#e8d44d';
+  ctx.font = 'italic 20px sans-serif';
+  ctx.fillText(`"${opp.taunt}"`, CANVAS_W / 2, 300);
+
+  // Difficulty bar
+  ctx.fillStyle = '#555';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Difficulty', CANVAS_W / 2, 350);
+  const barW = 200, barH = 12;
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(CANVAS_W / 2 - barW / 2, 360, barW, barH);
+  ctx.fillStyle = opp.color;
+  ctx.fillRect(CANVAS_W / 2 - barW / 2, 360, barW * opp.ai, barH);
+  ctx.strokeStyle = '#4a4a7e';
+  ctx.strokeRect(CANVAS_W / 2 - barW / 2, 360, barW, barH);
+
+  // Defeated opponents
+  if (campaignDefeated.length > 0) {
+    ctx.fillStyle = '#555';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Defeated:', CANVAS_W / 2, 420);
+    const defeated = campaignDefeated.map(i => OPPONENTS[i].name).join(', ');
+    ctx.fillStyle = '#2ecc40';
+    ctx.fillText(defeated, CANVAS_W / 2, 440);
+  }
+
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = '20px sans-serif';
+  ctx.fillText('Press ENTER to battle!', CANVAS_W / 2, 500);
+
+  ctx.fillStyle = '#555';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Press ESC to return to title', CANVAS_W / 2, CANVAS_H - 30);
+}
+
+function drawGameOver(won) {
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  ctx.textAlign = 'center';
+
+  if (won) {
+    ctx.fillStyle = '#2ecc40';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText('VICTORY!', CANVAS_W / 2, CANVAS_H / 2 - 40);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    if (currentOpponent >= OPPONENTS.length - 1) {
+      ctx.fillText('You defeated all the Ooze Masters!', CANVAS_W / 2, CANVAS_H / 2 + 10);
+      ctx.fillText('You are the TRUE Ooze Champion!', CANVAS_W / 2, CANVAS_H / 2 + 40);
+    } else {
+      ctx.fillText(`${OPPONENTS[currentOpponent].name} has been vanquished!`, CANVAS_W / 2, CANVAS_H / 2 + 10);
+    }
+  } else {
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText('DEFEATED!', CANVAS_W / 2, CANVAS_H / 2 - 40);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText(`${OPPONENTS[currentOpponent].name} overwhelmed you with ooze!`, CANVAS_W / 2, CANVAS_H / 2 + 10);
+  }
+
+  ctx.fillStyle = '#f1c40f';
+  ctx.font = '18px sans-serif';
+  ctx.fillText('Press ENTER to continue', CANVAS_W / 2, CANVAS_H / 2 + 80);
+}
+
+// --- GAME VARIABLES ---
+let player, ai;
+
+function startBattle(oppIndex) {
+  const opp = OPPONENTS[oppIndex];
+  player = new Board(false);
+  ai = new Board(true);
+  player.opponent = ai;
+  ai.opponent = player;
+  ai.aiDifficulty = opp.ai;
+  ai.dropInterval = 60 * opp.speed;
+  gameState = 'playing';
+}
+
+// --- INPUT ---
+const keys = {};
+const keyRepeat = {};
+const KEY_DELAY = 10; // frames before repeat
+const KEY_RATE = 3;   // frames between repeats
+
+document.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  keys[e.code] = true;
+  keyRepeat[e.code] = 0;
+
+  // State transitions
+  if (gameState === 'title' && e.code === 'Enter') {
+    gameState = 'select';
+    return;
+  }
+  if (gameState === 'select') {
+    if (e.code === 'Enter') startBattle(currentOpponent);
+    if (e.code === 'Escape') gameState = 'title';
+    return;
+  }
+  if (gameState === 'win') {
+    if (e.code === 'Enter') {
+      if (currentOpponent >= OPPONENTS.length - 1) {
+        // Beat the game
+        gameState = 'title';
+        currentOpponent = 0;
+        campaignDefeated = [];
+      } else {
+        campaignDefeated.push(currentOpponent);
+        currentOpponent++;
+        gameState = 'select';
+      }
+    }
+    return;
+  }
+  if (gameState === 'lose') {
+    if (e.code === 'Enter') {
+      gameState = 'select'; // retry same opponent
+    }
+    return;
+  }
+
+  if (gameState !== 'playing') return;
+
+  // Game controls (immediate)
+  if (e.code === 'KeyZ') player.rotCCW();
+  if (e.code === 'KeyX') player.rotCW();
+  if (e.code === 'ArrowUp') player.rotCW();
+  if (e.code === 'Space') player.hardDrop();
+});
+
+document.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+  delete keyRepeat[e.code];
+});
+
+function handleInput() {
+  if (gameState !== 'playing') return;
+
+  // Repeatable keys
+  for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowDown']) {
+    if (keys[code]) {
+      keyRepeat[code] = (keyRepeat[code] || 0) + 1;
+      if (keyRepeat[code] === 1 || (keyRepeat[code] > KEY_DELAY && keyRepeat[code] % KEY_RATE === 0)) {
+        if (code === 'ArrowLeft') player.moveLeft();
+        if (code === 'ArrowRight') player.moveRight();
+        if (code === 'ArrowDown') player.softDrop();
+      }
+    }
+  }
+}
+
+// --- MAIN LOOP ---
+function gameLoop() {
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+  if (gameState === 'title') {
+    drawTitle();
+  } else if (gameState === 'select') {
+    drawOpponentSelect();
+  } else if (gameState === 'playing') {
+    handleInput();
+
+    const opp = OPPONENTS[currentOpponent];
+    player.update(1);
+    ai.update(1);
+
+    // Background
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // Header
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('VS', CANVAS_W / 2, 40);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#3498db';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('YOU', P1_BOARD_X, 35);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = opp.color;
+    ctx.fillText(opp.name, P2_BOARD_X + BOARD_W, 35);
+
+    // Boards
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    drawBoard(ai, P2_BOARD_X, BOARD_Y);
+
+    // Next pieces
+    drawNextPiece(player, P1_BOARD_X - SIDE_W + 10, BOARD_Y + 30, 'NEXT');
+    drawNextPiece(ai, P2_BOARD_X + BOARD_W + 10, BOARD_Y + 30, 'NEXT');
+
+    // Scores
+    drawScore(player, P1_BOARD_X - SIDE_W / 2 + 10, BOARD_Y + 180, 'SCORE');
+    drawScore(ai, P2_BOARD_X + BOARD_W + SIDE_W / 2 + 10, BOARD_Y + 180, 'SCORE');
+
+    // Controls hint
+    ctx.fillStyle = '#444';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Arrows: Move  |  Z/X: Rotate  |  Space: Drop  |  ESC: Quit', CANVAS_W / 2, CANVAS_H - 10);
+
+    // Check win/lose
+    if (ai.dead) {
+      gameState = 'win';
+      sfxWin();
+    } else if (player.dead) {
+      gameState = 'lose';
+      sfxLose();
+    }
+  } else if (gameState === 'win') {
+    // Draw boards behind overlay
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    drawBoard(ai, P2_BOARD_X, BOARD_Y);
+    drawGameOver(true);
+  } else if (gameState === 'lose') {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    drawBoard(player, P1_BOARD_X, BOARD_Y);
+    drawBoard(ai, P2_BOARD_X, BOARD_Y);
+    drawGameOver(false);
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+// Handle ESC during gameplay
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && gameState === 'playing') {
+    gameState = 'select';
+  }
+});
+
+// Start
+gameLoop();
+</script>
+</body>
+</html>
