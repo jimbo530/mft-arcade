@@ -2,8 +2,30 @@
   "name": "MfT Arcade",
   "description": "Play-for-impact gaming powered by $MfT on Base",
   "nftContracts": [
+    { "name": "Baseling", "address": "0xFCb825491490284189C75fD330Fd08Df5E9217b9", "type": "ERC721" },
+    { "name": "Tales of Tasern Character", "address": "0x9de88faa0dbcfc75534d1b4fd277dadffcc4fd30", "type": "ERC721" },
+    { "name": "Dreadmane Ravager", "address": "0xfaf9a6b6409b3e69f7d3b38099b41c45bbc29ba5", "type": "ERC721" },
+    { "name": "Sir Garrick Lionheart", "address": "0xea39112525f9169038435cF22f82e5436e0BCC4F", "type": "ERC721" },
+    { "name": "Captain Brinebeak", "address": "0x691e4bEF9A83C00f8A35ed601090E42A8b953c77", "type": "ERC721" },
+    { "name": "Bunrick", "address": "0x63a9c72C90860eaa64A39A31E1A4B00305aA3974", "type": "ERC721" },
+    { "name": "Vaelrith", "address": "0x4A35B948F49A169976FCCC96220676692c987A57", "type": "ERC721" },
+    { "name": "Kira Emberstep", "address": "0x26CE8466eC418b7D42d8789476642cdFbB5e8aab", "type": "ERC721" },
+    { "name": "Tharion Rootkeeper", "address": "0x76D50Fbc46a31aC21855b2b8218F4F642991c25e", "type": "ERC721" },
+    { "name": "Rook Highbranch", "address": "0xB9c37Ce29A0966f83B29c905c434905301435D9d", "type": "ERC721" },
+    { "name": "Captain Blackfeather", "address": "0x716AdcbEd9Ef58CCf11434Aa7962b0f200A030af", "type": "ERC721" },
+    { "name": "Mason Ironhorn", "address": "0x412495cde08733715C2478c6EE00876ABF5e6CE8", "type": "ERC721" }
   ],
   "games": [
+    {
+      "id": "baselings",
+      "name": "Baselings",
+      "description": "Hatch eggs, feed baselings, grow your POOP garden. Tamagotchi meets DeFi on Base.",
+      "path": "https://tasern.quest/baseling/",
+      "thumbnail": "https://tasern.quest/baseling/sprites/egg-store.png",
+      "modes": ["campaign"],
+      "wager": false,
+      "status": "live"
+    },
     {
       "id": "ooze-battle",
       "name": "Ooze Battle",

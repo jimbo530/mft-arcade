@@ -11,7 +11,7 @@
 
 const MftWallet = (() => {
   const BASE_CHAIN_ID = '0x2105'; // 8453
-  const BASE_RPC = 'https://mainnet.base.org';
+  const BASE_RPC = 'https://base-mainnet.g.alchemy.com/v2/bwii0dH70pKYTKnqj3aNU';
   const MFT_TOKEN = '0x8fb87d13b40b1a67b22ed1a17e2835fe7e3a9ba3';
 
   const ERC20_ABI = [
