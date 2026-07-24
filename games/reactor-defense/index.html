@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Reactor Defense - MfT Arcade</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a1a0a;overflow:hidden;font-family:'Courier New',monospace;touch-action:none}
+canvas{display:block;margin:0 auto}
+#ui{position:absolute;top:8px;left:8px;color:#7fff7f;font-size:14px;pointer-events:none}
+#ui div{margin-bottom:4px}
+#towers{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px}
+.tower-btn{background:#1a3a1a;border:2px solid #3a6a3a;color:#7fff7f;padding:8px 12px;border-radius:6px;font-family:inherit;font-size:12px;cursor:pointer;text-align:center;min-width:80px}
+.tower-btn:hover,.tower-btn.selected{border-color:#7fff7f;background:#2a4a2a}
+.tower-btn.disabled{opacity:0.4;cursor:not-allowed}
+#splash{position:absolute;top:0;left:0;width:100%;height:100%;background:#0a1a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100}
+#splash h1{color:#7fff7f;font-size:28px;margin-bottom:10px}
+#splash p{color:#4a8a4a;font-size:14px;margin-bottom:20px;text-align:center;max-width:300px}
+#splash button{background:#1a3a1a;border:2px solid #7fff7f;color:#7fff7f;padding:12px 30px;font-family:inherit;font-size:16px;cursor:pointer;border-radius:6px}
+#splash button:hover{background:#2a5a2a}
+#gameover{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(10,26,10,0.9);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100}
+#gameover h2{color:#ff4444;font-size:24px;margin-bottom:10px}
+#gameover p{color:#7fff7f;font-size:14px;margin-bottom:8px}
+#gameover button{background:#1a3a1a;border:2px solid #7fff7f;color:#7fff7f;padding:10px 24px;font-family:inherit;font-size:14px;cursor:pointer;border-radius:6px;margin-top:12px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div id="hpDisplay">Reactor HP: 20/20</div>
+  <div id="sporeDisplay">Spores: 50</div>
+  <div id="waveDisplay">Wave: 1</div>
+  <div id="scoreDisplay">Score: 0</div>
+  <div id="highDisplay">Best: Wave 0</div>
+</div>
+<div id="towers">
+  <button class="tower-btn" data-tower="spore">Spore<br>15sp</button>
+  <button class="tower-btn" data-tower="mycelium">Mycelium<br>30sp</button>
+  <button class="tower-btn" data-tower="reactor">Reactor<br>60sp</button>
+</div>
+<div id="splash">
+  <h1>Reactor Defense</h1>
+  <p>Defend your Unrugable reactor from ruggers! Place mushroom towers to stop LP drainers.</p>
+  <button onclick="startGame()">Start</button>
+</div>
+<div id="gameover">
+  <h2>REACTOR DRAINED</h2>
+  <p id="goScore"></p>
+  <p id="goWave"></p>
+  <p id="goHigh"></p>
+  <button onclick="startGame()">Try Again</button>
+</div>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H, CX, CY, pathPoints = [], placedTowers = [], enemies = [], bullets = [];
+let spores = 50, wave = 0, score = 0, reactorHP = 20, maxHP = 20;
+let selectedTower = null, gameRunning = false, waveActive = false;
+let enemiesToSpawn = 0, spawnTimer = 0, spawnInterval = 40, waveDelay = 0;
+let highWave = parseInt(localStorage.getItem('rd_highWave') || '0');
+
+const TOWER_DATA = {
+  spore: { cost: 15, range: 80, damage: 1, rate: 15, color: '#88cc44', name: 'Spore' },
+  mycelium: { cost: 30, range: 90, damage: 1, rate: 30, color: '#44aacc', name: 'Mycelium', slow: 0.4 },
+  reactor: { cost: 60, range: 100, damage: 4, rate: 50, color: '#ffaa22', name: 'Reactor', aoe: 40 }
+};
+
+function resize() {
+  W = Math.min(window.innerWidth, 800);
+  H = Math.min(window.innerHeight - 60, 600);
+  canvas.width = W; canvas.height = H;
+  CX = W / 2; CY = H / 2;
+  buildPath();
+}
+
+function buildPath() {
+  pathPoints = [];
+  const segments = [
+    { x: 0, y: H * 0.3 },
+    { x: W * 0.2, y: H * 0.3 },
+    { x: W * 0.2, y: H * 0.65 },
+    { x: W * 0.45, y: H * 0.65 },
+    { x: W * 0.45, y: H * 0.35 },
+    { x: W * 0.65, y: H * 0.35 },
+    { x: W * 0.65, y: H * 0.6 },
+    { x: CX, y: CY }
+  ];
+  for (let i = 0; i < segments.length - 1; i++) {
+    const a = segments[i], b = segments[i + 1];
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.ceil(dist / 4);
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      pathPoints.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  pathPoints.push(segments[segments.length - 1]);
+}
+
+function startGame() {
+  document.getElementById('splash').style.display = 'none';
+  document.getElementById('gameover').style.display = 'none';
+  placedTowers = []; enemies = []; bullets = [];
+  spores = 50; wave = 0; score = 0; reactorHP = maxHP;
+  selectedTower = null; waveActive = false; waveDelay = 60;
+  gameRunning = true;
+  updateUI();
+}
+
+function updateUI() {
+  document.getElementById('hpDisplay').textContent = `Reactor HP: ${reactorHP}/${maxHP}`;
+  document.getElementById('sporeDisplay').textContent = `Spores: ${spores}`;
+  document.getElementById('waveDisplay').textContent = `Wave: ${wave}`;
+  document.getElementById('scoreDisplay').textContent = `Score: ${score}`;
+  document.getElementById('highDisplay').textContent = `Best: Wave ${highWave}`;
+  document.querySelectorAll('.tower-btn').forEach(btn => {
+    const t = TOWER_DATA[btn.dataset.tower];
+    btn.classList.toggle('disabled', spores < t.cost);
+  });
+}
+
+function spawnWave() {
+  wave++;
+  enemiesToSpawn = 4 + wave * 2;
+  spawnTimer = 0;
+  spawnInterval = Math.max(15, 40 - wave);
+  waveActive = true;
+}
+
+function spawnEnemy() {
+  const hpBase = 3 + wave * 2;
+  const speed = Math.min(1.8, 0.7 + wave * 0.05);
+  let type = 'rugger';
+  let hp = hpBase, spd = speed, size = 8, reward = 3;
+  if (wave > 3 && Math.random() < 0.2) {
+    type = 'whale'; hp = hpBase * 3; spd = speed * 0.6; size = 14; reward = 10;
+  } else if (wave > 5 && Math.random() < 0.15) {
+    type = 'flash'; hp = Math.ceil(hpBase * 0.5); spd = speed * 1.6; size = 6; reward = 5;
+  }
+  enemies.push({ x: pathPoints[0].x, y: pathPoints[0].y, pathIdx: 0, hp, maxHp: hp, speed: spd, baseSpeed: spd, size, type, reward, slowTimer: 0 });
+}
+
+function placeTower(x, y) {
+  if (!selectedTower) return;
+  const data = TOWER_DATA[selectedTower];
+  if (spores < data.cost) return;
+  // check not on path
+  for (const p of pathPoints) {
+    if (Math.hypot(x - p.x, y - p.y) < 20) return;
+  }
+  // check not on other tower
+  for (const t of placedTowers) {
+    if (Math.hypot(x - t.x, y - t.y) < 30) return;
+  }
+  // check not on reactor
+  if (Math.hypot(x - CX, y - CY) < 30) return;
+  spores -= data.cost;
+  placedTowers.push({ x, y, type: selectedTower, ...data, cooldown: 0 });
+  updateUI();
+}
+
+function tick() {
+  if (!gameRunning) return;
+
+  // wave management
+  if (!waveActive) {
+    waveDelay--;
+    if (waveDelay <= 0) spawnWave();
+  } else {
+    spawnTimer++;
+    if (spawnTimer >= spawnInterval && enemiesToSpawn > 0) {
+      spawnEnemy(); enemiesToSpawn--; spawnTimer = 0;
+    }
+    if (enemiesToSpawn <= 0 && enemies.length === 0) {
+      waveActive = false; waveDelay = 90;
+      spores += 5 + wave;
+      updateUI();
+    }
+  }
+
+  // move enemies
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    if (e.slowTimer > 0) { e.slowTimer--; e.speed = e.baseSpeed * 0.4; }
+    else { e.speed = e.baseSpeed; }
+    let moved = 0;
+    while (moved < e.speed && e.pathIdx < pathPoints.length - 1) {
+      const target = pathPoints[e.pathIdx + 1];
+      const dx = target.x - e.x, dy = target.y - e.y;
+      const dist = Math.hypot(dx, dy);
+      const step = Math.min(e.speed - moved, dist);
+      e.x += (dx / dist) * step;
+      e.y += (dy / dist) * step;
+      moved += step;
+      if (dist <= step) e.pathIdx++;
+    }
+    if (e.pathIdx >= pathPoints.length - 1) {
+      reactorHP -= (e.type === 'whale' ? 3 : 1);
+      enemies.splice(i, 1);
+      if (reactorHP <= 0) { gameOver(); return; }
+      updateUI();
+    }
+  }
+
+  // tower shooting
+  for (const t of placedTowers) {
+    t.cooldown--;
+    if (t.cooldown > 0) continue;
+    let target = null, minDist = t.range;
+    for (const e of enemies) {
+      const d = Math.hypot(e.x - t.x, e.y - t.y);
+      if (d < minDist) { minDist = d; target = e; }
+    }
+    if (target) {
+      t.cooldown = t.rate;
+      bullets.push({ x: t.x, y: t.y, tx: target.x, ty: target.y, target, damage: t.damage, speed: 4, type: t.type, aoe: t.aoe || 0, slow: t.slow || 0, color: t.color });
+    }
+  }
+
+  // move bullets
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    const dx = b.tx - b.x, dy = b.ty - b.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < b.speed) {
+      // hit
+      if (b.aoe > 0) {
+        for (const e of enemies) {
+          if (Math.hypot(e.x - b.tx, e.y - b.ty) < b.aoe) {
+            e.hp -= b.damage;
+          }
+        }
+      } else if (b.target && b.target.hp > 0) {
+        b.target.hp -= b.damage;
+        if (b.slow > 0) b.target.slowTimer = 40;
+      }
+      bullets.splice(i, 1);
+    } else {
+      b.x += (dx / dist) * b.speed;
+      b.y += (dy / dist) * b.speed;
+    }
+  }
+
+  // remove dead enemies
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    if (enemies[i].hp <= 0) {
+      score += enemies[i].reward;
+      spores += enemies[i].reward;
+      enemies.splice(i, 1);
+      updateUI();
+    }
+  }
+}
+
+function draw() {
+  ctx.fillStyle = '#0d1f0d';
+  ctx.fillRect(0, 0, W, H);
+
+  // draw ground texture dots
+  ctx.fillStyle = '#112211';
+  for (let i = 0; i < 60; i++) {
+    const x = (i * 137 + 43) % W, y = (i * 89 + 17) % H;
+    ctx.fillRect(x, y, 2, 2);
+  }
+
+  // draw path
+  ctx.strokeStyle = '#2a3a1a';
+  ctx.lineWidth = 28;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+  for (let i = 1; i < pathPoints.length; i += 4) {
+    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = '#3a4a2a';
+  ctx.lineWidth = 20;
+  ctx.beginPath();
+  ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+  for (let i = 1; i < pathPoints.length; i += 4) {
+    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+  }
+  ctx.stroke();
+
+  // draw reactor
+  const pulse = Math.sin(Date.now() / 300) * 4;
+  ctx.beginPath();
+  ctx.arc(CX, CY, 22 + pulse, 0, Math.PI * 2);
+  ctx.fillStyle = reactorHP > maxHP / 2 ? '#22aa44' : reactorHP > maxHP / 4 ? '#aaaa22' : '#aa2222';
+  ctx.fill();
+  ctx.strokeStyle = '#7fff7f';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#0a1a0a';
+  ctx.beginPath();
+  ctx.arc(CX, CY, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#7fff7f';
+  ctx.font = '8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('R', CX, CY + 3);
+
+  // draw towers
+  for (const t of placedTowers) {
+    // base
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath();
+    ctx.arc(t.x, t.y + 4, 10, 0, Math.PI * 2);
+    ctx.fill();
+    // mushroom cap
+    ctx.fillStyle = t.color;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y - 4, 12, Math.PI, 0);
+    ctx.fill();
+    // stem
+    ctx.fillStyle = '#ccccaa';
+    ctx.fillRect(t.x - 3, t.y - 4, 6, 10);
+    // spots on cap
+    ctx.fillStyle = '#ffffff44';
+    ctx.beginPath();
+    ctx.arc(t.x - 4, t.y - 7, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(t.x + 3, t.y - 9, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // draw enemies
+  for (const e of enemies) {
+    let color = '#cc3333';
+    if (e.type === 'whale') color = '#aa22aa';
+    else if (e.type === 'flash') color = '#ffaa00';
+    if (e.slowTimer > 0) color = '#4488cc';
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+    ctx.fill();
+    // angry eyes
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(e.x - 3, e.y - 3, 2, 2);
+    ctx.fillRect(e.x + 1, e.y - 3, 2, 2);
+    // hp bar
+    ctx.fillStyle = '#333333';
+    ctx.fillRect(e.x - e.size, e.y - e.size - 6, e.size * 2, 3);
+    ctx.fillStyle = '#44ff44';
+    ctx.fillRect(e.x - e.size, e.y - e.size - 6, e.size * 2 * (e.hp / e.maxHp), 3);
+  }
+
+  // draw bullets
+  for (const b of bullets) {
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // wave incoming indicator
+  if (!waveActive && waveDelay > 0 && waveDelay < 60) {
+    ctx.fillStyle = '#7fff7f';
+    ctx.font = '16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Wave ${wave + 1} incoming...`, CX, 30);
+  }
+
+  // selected tower range preview on cursor
+  if (selectedTower && lastMouse) {
+    ctx.strokeStyle = '#7fff7f33';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(lastMouse.x, lastMouse.y, TOWER_DATA[selectedTower].range, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function gameOver() {
+  gameRunning = false;
+  if (wave > highWave) {
+    highWave = wave;
+    localStorage.setItem('rd_highWave', String(highWave));
+  }
+  document.getElementById('goScore').textContent = `Score: ${score}`;
+  document.getElementById('goWave').textContent = `Reached Wave: ${wave}`;
+  document.getElementById('goHigh').textContent = `Best: Wave ${highWave}`;
+  document.getElementById('gameover').style.display = 'flex';
+  updateUI();
+}
+
+let lastMouse = null;
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  lastMouse = { x: e.clientX - r.left, y: e.clientY - r.top };
+});
+canvas.addEventListener('click', e => {
+  const r = canvas.getBoundingClientRect();
+  placeTower(e.clientX - r.left, e.clientY - r.top);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  placeTower(t.clientX - r.left, t.clientY - r.top);
+});
+
+document.querySelectorAll('.tower-btn').forEach(btn => {
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const type = btn.dataset.tower;
+    if (spores < TOWER_DATA[type].cost) return;
+    document.querySelectorAll('.tower-btn').forEach(b => b.classList.remove('selected'));
+    if (selectedTower === type) { selectedTower = null; }
+    else { selectedTower = type; btn.classList.add('selected'); }
+  });
+});
+
+function loop() {
+  tick();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', resize);
+resize();
+updateUI();
+loop();
+</script>
+</body>
+</html>

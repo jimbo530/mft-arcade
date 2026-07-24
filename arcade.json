@@ -19,7 +19,7 @@
     {
       "id": "baselings",
       "name": "Baselings",
-      "description": "Hatch eggs, feed baselings, grow your POOP garden. Tamagotchi meets DeFi on Base.",
+      "description": "Hatch eggs, feed baselings, grow your POOP garden. Virtual-pet meets DeFi on Base.",
       "path": "https://tasern.quest/baseling/",
       "thumbnail": "https://tasern.quest/baseling/sprites/egg-store.png",
       "modes": ["campaign"],
@@ -34,6 +34,36 @@
       "thumbnail": "games/ooze-battle/assets/background.webp",
       "modes": ["campaign", "online-pvp"],
       "wager": true,
+      "status": "live"
+    },
+    {
+      "id": "spore-runner",
+      "name": "Spore Runner",
+      "description": "Endless runner through the mycelium forest. Collect spores, dodge obstacles, grab golden mushrooms!",
+      "path": "games/spore-runner/",
+      "thumbnail": null,
+      "modes": ["endless"],
+      "wager": false,
+      "status": "live"
+    },
+    {
+      "id": "poop-catcher",
+      "name": "POOP Catcher",
+      "description": "Catch falling POOP tokens in your basket! Golden poops, green spores, and toxic mushrooms rain down. Build combos for 2x multiplier!",
+      "path": "games/poop-catcher/",
+      "thumbnail": null,
+      "modes": ["endless"],
+      "wager": false,
+      "status": "live"
+    },
+    {
+      "id": "reactor-defense",
+      "name": "Reactor Defense",
+      "description": "Tower defense — place mushroom turrets to stop ruggers from draining your Unrugable reactor!",
+      "path": "games/reactor-defense/",
+      "thumbnail": null,
+      "modes": ["endless"],
+      "wager": false,
       "status": "live"
     }
   ]

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>POOP Catcher | MfT Arcade</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a0f0a;overflow:hidden;touch-action:none;font-family:monospace}
+canvas{display:block;margin:0 auto}
+#ui{position:absolute;top:8px;left:8px;color:#e8d5a3;font-size:14px;text-shadow:1px 1px 2px #000}
+#ui div{margin:2px 0}
+#gameover{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  text-align:center;color:#e8d5a3;font-size:20px;text-shadow:2px 2px 4px #000}
+#gameover button{margin-top:16px;padding:8px 24px;font-size:16px;font-family:monospace;
+  background:#4a2800;color:#e8d5a3;border:2px solid #8b5e3c;border-radius:4px;cursor:pointer}
+#gameover button:hover{background:#6b3a00}
+</style>
+</head>
+<body>
+<div id="ui">
+  <div id="score">Score: 0</div>
+  <div id="lives">Lives: &#10084; &#10084; &#10084;</div>
+  <div id="combo"></div>
+  <div id="hi">Best: 0</div>
+</div>
+<div id="gameover">
+  <div id="go-title">GAME OVER</div>
+  <div id="go-score" style="margin-top:8px"></div>
+  <div id="go-best" style="margin-top:4px"></div>
+  <button id="restart">Play Again</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const uiScore = document.getElementById('score');
+const uiLives = document.getElementById('lives');
+const uiCombo = document.getElementById('combo');
+const uiHi = document.getElementById('hi');
+const goScreen = document.getElementById('gameover');
+const goScore = document.getElementById('go-score');
+const goBest = document.getElementById('go-best');
+
+let W, H, scale;
+function resize() {
+  W = Math.min(window.innerWidth, 480);
+  H = Math.min(window.innerHeight, 720);
+  scale = W / 480;
+  canvas.width = W; canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const BASKET_W = 56, BASKET_H = 32;
+let basket = { x: W / 2, y: H - 50, w: BASKET_W * scale, h: BASKET_H * scale };
+let items = [], particles = [], bgParticles = [];
+let score = 0, lives = 3, combo = 0, multiplier = 1, gameOver = false, frame = 0;
+let highScore = parseInt(localStorage.getItem('poopCatcher_hi') || '0');
+let spawnRate = 60, fallSpeed = 2, lastSpawn = 0;
+let touchX = null;
+
+uiHi.textContent = 'Best: ' + highScore;
+
+// Background particles
+for (let i = 0; i < 30; i++) {
+  bgParticles.push({ x: Math.random() * 480, y: Math.random() * 720,
+    vx: (Math.random() - 0.5) * 0.3, vy: Math.random() * 0.2 + 0.1,
+    r: Math.random() * 3 + 1, a: Math.random() * 0.3 + 0.1 });
+}
+
+const TYPES = [
+  { id: 'poop', weight: 55, pts: 1, color: '#6b3a00', outline: '#3d2200', size: 14 },
+  { id: 'golden', weight: 10, pts: 5, color: '#ffd700', outline: '#b8860b', size: 14, sparkle: true },
+  { id: 'spore', weight: 25, pts: 3, color: '#4caf50', outline: '#2e7d32', size: 12 },
+  { id: 'toxic', weight: 10, pts: -1, color: '#d32f2f', outline: '#7f0000', size: 13, harmful: true }
+];
+
+function pickType() {
+  let total = TYPES.reduce((s, t) => s + t.weight, 0);
+  let r = Math.random() * total;
+  for (let t of TYPES) { r -= t.weight; if (r <= 0) return t; }
+  return TYPES[0];
+}
+
+function spawnItem() {
+  let type = pickType();
+  items.push({ x: Math.random() * (W - 30) + 15, y: -20,
+    type, vy: fallSpeed * scale, rot: 0, vr: (Math.random() - 0.5) * 0.05 });
+}
+
+function drawPoop(x, y, size, color, outline, sparkle) {
+  ctx.save(); ctx.translate(x, y);
+  // Pixel poop shape
+  let s = size * scale;
+  ctx.fillStyle = outline;
+  ctx.beginPath();
+  ctx.arc(0, s * 0.1, s * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(0, s * 0.1, s * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  // Top swirl
+  ctx.fillStyle = outline;
+  ctx.beginPath();
+  ctx.arc(0, -s * 0.3, s * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(0, -s * 0.3, s * 0.28, 0, Math.PI * 2);
+  ctx.fill();
+  // Tip
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(s * 0.05, -s * 0.55, s * 0.18, 0, Math.PI * 2);
+  ctx.fill();
+  if (sparkle) {
+    ctx.fillStyle = '#fff';
+    let t = frame * 0.1;
+    for (let i = 0; i < 4; i++) {
+      let ang = t + i * Math.PI / 2;
+      let sx = Math.cos(ang) * s * 0.8;
+      let sy = Math.sin(ang) * s * 0.6;
+      ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+    }
+  }
+  ctx.restore();
+}
+
+function drawSpore(x, y, size, color, outline) {
+  ctx.save(); ctx.translate(x, y);
+  let s = size * scale;
+  // Mushroom cap
+  ctx.fillStyle = outline;
+  ctx.beginPath();
+  ctx.ellipse(0, -s * 0.2, s * 0.6, s * 0.45, 0, Math.PI, 0);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(0, -s * 0.2, s * 0.48, s * 0.35, 0, Math.PI, 0);
+  ctx.fill();
+  // Dots
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-s * 0.2, -s * 0.45, 3, 3);
+  ctx.fillRect(s * 0.15, -s * 0.35, 2, 2);
+  // Stem
+  ctx.fillStyle = '#e8d5a3';
+  ctx.fillRect(-s * 0.12, -s * 0.2, s * 0.24, s * 0.5);
+  ctx.restore();
+}
+
+function drawToxic(x, y, size, color, outline) {
+  ctx.save(); ctx.translate(x, y);
+  let s = size * scale;
+  // Red mushroom with skull vibe
+  ctx.fillStyle = outline;
+  ctx.beginPath();
+  ctx.ellipse(0, -s * 0.15, s * 0.6, s * 0.5, 0, Math.PI, 0);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(0, -s * 0.15, s * 0.5, s * 0.4, 0, Math.PI, 0);
+  ctx.fill();
+  // X marks
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-s*0.2,-s*0.35); ctx.lineTo(-s*0.05,-s*0.25); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-s*0.05,-s*0.35); ctx.lineTo(-s*0.2,-s*0.25); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(s*0.1,-s*0.35); ctx.lineTo(s*0.25,-s*0.25); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(s*0.25,-s*0.35); ctx.lineTo(s*0.1,-s*0.25); ctx.stroke();
+  // Stem
+  ctx.fillStyle = '#888';
+  ctx.fillRect(-s * 0.1, -s * 0.15, s * 0.2, s * 0.5);
+  ctx.restore();
+}
+
+function drawBasket() {
+  let bx = basket.x - basket.w / 2, by = basket.y;
+  // Basket body
+  ctx.fillStyle = '#8b5e3c';
+  ctx.fillRect(bx, by, basket.w, basket.h);
+  // Weave pattern
+  ctx.strokeStyle = '#6b3a00'; ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(bx, by + i * (basket.h / 4) + 4);
+    ctx.lineTo(bx + basket.w, by + i * (basket.h / 4) + 4);
+    ctx.stroke();
+  }
+  // Rim
+  ctx.fillStyle = '#4a2800';
+  ctx.fillRect(bx - 3, by - 3, basket.w + 6, 5);
+  // Handle
+  ctx.strokeStyle = '#4a2800'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(basket.x, by - 8, basket.w * 0.3, Math.PI, 0);
+  ctx.stroke();
+}
+
+function addParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({ x, y, vx: (Math.random()-0.5)*4, vy: -Math.random()*3-1,
+      life: 30, color, r: Math.random()*3+1 });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    let p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  for (let p of particles) {
+    ctx.globalAlpha = p.life / 30;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBg() {
+  let grd = ctx.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, '#0d1b0e');
+  grd.addColorStop(1, '#1a0f0a');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+  // Floating bg particles
+  ctx.fillStyle = '#4caf50';
+  for (let p of bgParticles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.y > 720) { p.y = -5; p.x = Math.random() * 480; }
+    if (p.x < 0) p.x = 480; if (p.x > 480) p.x = 0;
+    ctx.globalAlpha = p.a;
+    ctx.beginPath();
+    ctx.arc(p.x * scale, p.y * scale, p.r * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function updateUI() {
+  uiScore.textContent = 'Score: ' + score + (multiplier > 1 ? ' (x' + multiplier + ')' : '');
+  let hearts = '';
+  for (let i = 0; i < lives; i++) hearts += '\u2764 ';
+  uiLives.textContent = 'Lives: ' + hearts;
+  uiCombo.textContent = combo >= 3 ? 'Combo: ' + combo + '/5' : '';
+}
+
+function endGame() {
+  gameOver = true;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('poopCatcher_hi', String(highScore));
+  }
+  uiHi.textContent = 'Best: ' + highScore;
+  goScore.textContent = 'Score: ' + score;
+  goBest.textContent = 'Best: ' + highScore;
+  goScreen.style.display = 'block';
+}
+
+function resetGame() {
+  score = 0; lives = 3; combo = 0; multiplier = 1; frame = 0;
+  items = []; particles = []; gameOver = false;
+  spawnRate = 60; fallSpeed = 2;
+  basket.x = W / 2;
+  goScreen.style.display = 'none';
+  updateUI();
+}
+
+function collides(item) {
+  let ix = item.x, iy = item.y, ir = item.type.size * scale * 0.6;
+  let bx = basket.x - basket.w / 2, by = basket.y;
+  return ix > bx - ir && ix < bx + basket.w + ir && iy > by - ir && iy < by + basket.h;
+}
+
+function loop() {
+  if (gameOver) { requestAnimationFrame(loop); return; }
+  frame++;
+  // Difficulty ramp
+  if (frame % 300 === 0) {
+    fallSpeed = Math.min(fallSpeed + 0.3, 7);
+    spawnRate = Math.max(spawnRate - 3, 20);
+  }
+  // Spawn
+  if (frame - lastSpawn >= spawnRate) { spawnItem(); lastSpawn = frame; }
+  // Update items
+  for (let i = items.length - 1; i >= 0; i--) {
+    let it = items[i];
+    it.y += it.vy; it.rot += it.vr;
+    if (collides(it)) {
+      if (it.type.harmful) {
+        lives--;
+        combo = 0; multiplier = 1;
+        addParticles(it.x, it.y, '#ff4444', 8);
+        if (lives <= 0) endGame();
+      } else {
+        let pts = it.type.pts * multiplier;
+        score += pts;
+        combo++;
+        if (combo >= 5) { multiplier = 2; combo = 0; addParticles(basket.x, basket.y, '#ffd700', 12); }
+        addParticles(it.x, it.y, it.type.color, 6);
+      }
+      items.splice(i, 1);
+      updateUI();
+    } else if (it.y > H + 20) {
+      if (!it.type.harmful) { combo = 0; multiplier = 1; }
+      items.splice(i, 1);
+      updateUI();
+    }
+  }
+  updateParticles();
+  // Draw
+  drawBg();
+  for (let it of items) {
+    if (it.type.id === 'poop' || it.type.id === 'golden')
+      drawPoop(it.x, it.y, it.type.size, it.type.color, it.type.outline, it.type.sparkle);
+    else if (it.type.id === 'spore')
+      drawSpore(it.x, it.y, it.type.size, it.type.color, it.type.outline);
+    else
+      drawToxic(it.x, it.y, it.type.size, it.type.color, it.type.outline);
+  }
+  drawBasket();
+  drawParticles();
+  // Multiplier indicator
+  if (multiplier > 1) {
+    ctx.fillStyle = '#ffd700';
+    ctx.font = (16 * scale) + 'px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('x2 COMBO!', W / 2, 60 * scale);
+  }
+  requestAnimationFrame(loop);
+}
+
+// Input
+let keys = {};
+document.addEventListener('keydown', e => { keys[e.key] = true; });
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function inputLoop() {
+  if (!gameOver) {
+    let speed = 6 * scale;
+    if (keys['ArrowLeft'] || keys['a']) basket.x = Math.max(basket.w / 2, basket.x - speed);
+    if (keys['ArrowRight'] || keys['d']) basket.x = Math.min(W - basket.w / 2, basket.x + speed);
+  }
+  requestAnimationFrame(inputLoop);
+}
+
+// Touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  let nx = e.touches[0].clientX;
+  if (touchX !== null) {
+    basket.x += (nx - touchX);
+    basket.x = Math.max(basket.w / 2, Math.min(W - basket.w / 2, basket.x));
+  }
+  touchX = nx;
+});
+canvas.addEventListener('touchend', () => { touchX = null; });
+
+// Mouse drag for desktop testing
+let mouseDown = false;
+canvas.addEventListener('mousedown', e => { mouseDown = true; touchX = e.clientX; });
+canvas.addEventListener('mousemove', e => {
+  if (mouseDown && touchX !== null) {
+    basket.x += (e.clientX - touchX);
+    basket.x = Math.max(basket.w / 2, Math.min(W - basket.w / 2, basket.x));
+    touchX = e.clientX;
+  }
+});
+canvas.addEventListener('mouseup', () => { mouseDown = false; touchX = null; });
+
+document.getElementById('restart').addEventListener('click', resetGame);
+
+updateUI();
+requestAnimationFrame(loop);
+requestAnimationFrame(inputLoop);
+</script>
+</body>
+</html>

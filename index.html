@@ -282,6 +282,104 @@
   }
   .footer a { color: var(--accent-glow); text-decoration: none; }
 
+  /* --- FEATURED GAME --- */
+  .featured-section {
+    padding: 0 24px 32px;
+  }
+
+  .featured-card {
+    background: linear-gradient(135deg, #1a0f2e 0%, #0f1a2e 50%, #0f2e1a 100%);
+    border: 2px solid var(--gold);
+    border-radius: 20px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    position: relative;
+  }
+  .featured-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 48px rgba(241, 196, 15, 0.25);
+    border-color: var(--accent-glow);
+  }
+  .featured-card .featured-thumb {
+    width: 320px;
+    min-height: 220px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface2);
+  }
+  .featured-card .featured-info {
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1;
+  }
+  .featured-badge {
+    display: inline-block;
+    background: rgba(241, 196, 15, 0.15);
+    border: 1px solid rgba(241, 196, 15, 0.4);
+    color: var(--gold);
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    width: fit-content;
+  }
+  .featured-card .featured-info h2 {
+    font-family: var(--font-display);
+    font-size: 32px;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--gold) 0%, #e67e22 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .featured-card .featured-info p {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.6;
+    margin-bottom: 16px;
+  }
+  .featured-card .featured-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .featured-play-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--gold);
+    color: #0a0a0f;
+    border: none;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 700;
+    border-radius: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: var(--font-body);
+    width: fit-content;
+  }
+  .featured-play-btn:hover {
+    background: #e67e22;
+    transform: translateY(-1px);
+  }
+
+  @media (max-width: 600px) {
+    .featured-card { flex-direction: column; }
+    .featured-card .featured-thumb { width: 100%; height: 180px; }
+    .featured-card .featured-info { padding: 20px; }
+    .featured-card .featured-info h2 { font-size: 24px; }
+  }
+
   /* --- COMING SOON PLACEHOLDER --- */
   .empty-slot {
     border: 2px dashed var(--border);
@@ -332,8 +430,25 @@
 <!-- ACCESS GATE -->
 <div id="gateBanner" class="gate-banner" style="display:none;"></div>
 
+<!-- FEATURED: BASELINGS -->
+<div class="featured-section">
+  <div class="featured-card" onclick="window.location.href='https://tasern.quest/baseling/'">
+    <img class="featured-thumb" src="https://tasern.quest/baseling/sprites/egg-store.png" alt="Baselings" onerror="this.style.background='linear-gradient(135deg,#1a2e0f,#0f1a2e)';this.style.display='flex'">
+    <div class="featured-info">
+      <div class="featured-badge">Featured Game</div>
+      <h2>Baselings</h2>
+      <p>Hatch eggs, feed baselings, grow your POOP garden. Virtual-pet meets DeFi on Base — raise creatures, earn yield, build your empire.</p>
+      <div class="featured-tags" style="margin-bottom: 16px;">
+        <span class="tag live">Live</span>
+        <span class="tag campaign">Campaign</span>
+      </div>
+      <button class="featured-play-btn">Play Now &rarr;</button>
+    </div>
+  </div>
+</div>
+
 <!-- GAMES -->
-<h2 class="section-title">Games</h2>
+<h2 class="section-title">More Games</h2>
 <div class="games-grid" id="gamesGrid">
   <!-- Populated by JS -->
 </div>
@@ -419,7 +534,7 @@ async function renderGames() {
   const grid = document.getElementById('gamesGrid');
   grid.innerHTML = '';
 
-  for (const game of config.games) {
+  for (const game of config.games.filter(g => g.id !== 'baselings')) {
     const card = document.createElement('div');
     const isLocked = !hasAccess && MftWallet.isConnected();
     card.className = 'game-card' + (isLocked ? ' locked' : '');

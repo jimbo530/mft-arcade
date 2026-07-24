@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Spore Runner</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a1a0a; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; overflow: hidden; }
+canvas { border: 2px solid #1a3a1a; border-radius: 4px; image-rendering: pixelated; max-width: 100vw; max-height: 80vh; }
+#ui { color: #88cc88; text-align: center; margin-top: 8px; font-size: 14px; }
+#start-screen { position: absolute; color: #88ff88; text-align: center; font-size: 16px; line-height: 2; }
+#start-screen h1 { font-size: 28px; color: #44ffaa; text-shadow: 0 0 10px #44ffaa; }
+</style>
+</head>
+<body>
+<canvas id="game" width="480" height="320"></canvas>
+<div id="ui"></div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const ui = document.getElementById('ui');
+
+// Game state
+let state = 'start'; // start, playing, dead
+let score = 0;
+let highScore = 0;
+let frame = 0;
+let speed = 3;
+let gravity = 0.5;
+let jumpForce = -9;
+
+// Player
+let player = { x: 80, y: 200, vy: 0, w: 20, h: 20, grounded: false };
+const GROUND_Y = 260;
+
+// World
+let obstacles = [];
+let spores = [];
+let mushrooms = [];
+let particles = [];
+let invincible = 0;
+let bgOffset = 0;
+
+// Trees (background decoration)
+let trees = [];
+for (let i = 0; i < 8; i++) trees.push({ x: i * 70, h: 40 + Math.random() * 60 });
+
+try { highScore = parseInt(localStorage.getItem('sporerunner_hi') || '0', 10); } catch(e) { console.warn('[spore-runner] load high score:', e.message || e); }
+
+function reset() {
+  player = { x: 80, y: 200, vy: 0, w: 16, h: 16, grounded: false };
+  obstacles = [];
+  spores = [];
+  mushrooms = [];
+  particles = [];
+  score = 0;
+  speed = 3;
+  frame = 0;
+  invincible = 0;
+}
+
+function spawnObstacle() {
+  const types = ['log', 'rock', 'pool'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  let h = type === 'pool' ? 8 : 16 + Math.random() * 20;
+  let w = type === 'pool' ? 40 : 16 + Math.random() * 12;
+  obstacles.push({ x: canvas.width + 20, y: GROUND_Y - h, w, h, type });
+}
+
+function spawnSpore() {
+  let y = GROUND_Y - 30 - Math.random() * 80;
+  spores.push({ x: canvas.width + 20, y, r: 5 });
+}
+
+function spawnMushroom() {
+  mushrooms.push({ x: canvas.width + 20, y: GROUND_Y - 25, w: 18, h: 18 });
+}
+
+function jump() {
+  if (state === 'start') { state = 'playing'; reset(); return; }
+  if (state === 'dead') { state = 'playing'; reset(); return; }
+  if (player.grounded) {
+    player.vy = jumpForce;
+    player.grounded = false;
+  }
+}
+
+// Input
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyZ') jump();
+});
+canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
+canvas.addEventListener('click', jump);
+
+function collides(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function update() {
+  if (state !== 'playing') return;
+  frame++;
+  speed = 3 + frame * 0.001;
+  if (invincible > 0) invincible--;
+
+  // Player physics
+  player.vy += gravity;
+  player.y += player.vy;
+  if (player.y >= GROUND_Y - player.h) {
+    player.y = GROUND_Y - player.h;
+    player.vy = 0;
+    player.grounded = true;
+  }
+
+  // Spawn
+  if (frame % Math.max(40, 80 - Math.floor(frame / 100)) === 0) spawnObstacle();
+  if (frame % 30 === 0) spawnSpore();
+  if (frame % 500 === 0) spawnMushroom();
+
+  // Move obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    obstacles[i].x -= speed;
+    if (obstacles[i].x < -50) { obstacles.splice(i, 1); continue; }
+    if (!invincible && collides(player, obstacles[i])) { die(); return; }
+  }
+
+  // Move spores
+  for (let i = spores.length - 1; i >= 0; i--) {
+    spores[i].x -= speed;
+    if (spores[i].x < -10) { spores.splice(i, 1); continue; }
+    let s = spores[i];
+    if (player.x < s.x + s.r && player.x + player.w > s.x - s.r &&
+        player.y < s.y + s.r && player.y + player.h > s.y - s.r) {
+      score++;
+      for (let p = 0; p < 5; p++) particles.push({ x: s.x, y: s.y, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3, life: 20, color: '#44ffaa' });
+      spores.splice(i, 1);
+    }
+  }
+
+  // Move mushrooms (power-up)
+  for (let i = mushrooms.length - 1; i >= 0; i--) {
+    mushrooms[i].x -= speed;
+    if (mushrooms[i].x < -20) { mushrooms.splice(i, 1); continue; }
+    if (collides(player, mushrooms[i])) {
+      invincible = 180; // 3 seconds at 60fps
+      for (let p = 0; p < 10; p++) particles.push({ x: mushrooms[i].x, y: mushrooms[i].y, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 30, color: '#ffcc00' });
+      mushrooms.splice(i, 1);
+    }
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].x += particles[i].vx;
+    particles[i].y += particles[i].vy;
+    particles[i].life--;
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  // Background trees
+  bgOffset = (bgOffset + speed * 0.3) % 70;
+}
+
+function die() {
+  state = 'dead';
+  if (score > highScore) {
+    highScore = score;
+    try { localStorage.setItem('sporerunner_hi', String(highScore)); } catch(e) { console.warn('[spore-runner] save high score:', e.message || e); }
+  }
+}
+
+function draw() {
+  // Sky gradient
+  let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#0a1a0a');
+  grad.addColorStop(1, '#0d2a0d');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Background trees
+  ctx.fillStyle = '#0f2f0f';
+  for (let t of trees) {
+    let tx = ((t.x - bgOffset) % (70 * 8) + 70 * 8) % (70 * 8);
+    ctx.fillRect(tx + 8, GROUND_Y - t.h, 6, t.h);
+    ctx.beginPath();
+    ctx.arc(tx + 11, GROUND_Y - t.h, 15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Ground
+  ctx.fillStyle = '#1a3a1a';
+  ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+  ctx.fillStyle = '#2a5a2a';
+  ctx.fillRect(0, GROUND_Y, canvas.width, 3);
+
+  // Obstacles
+  for (let o of obstacles) {
+    if (o.type === 'log') { ctx.fillStyle = '#5a3a1a'; ctx.fillRect(o.x, o.y, o.w, o.h); }
+    else if (o.type === 'rock') { ctx.fillStyle = '#4a4a4a'; ctx.fillRect(o.x, o.y, o.w, o.h); ctx.fillStyle = '#5a5a5a'; ctx.fillRect(o.x+2, o.y+2, o.w-4, o.h-6); }
+    else if (o.type === 'pool') { ctx.fillStyle = '#aa2222'; ctx.fillRect(o.x, GROUND_Y - 4, o.w, 8); ctx.fillStyle = '#ff4444'; ctx.fillRect(o.x+2, GROUND_Y - 2, o.w-4, 4); }
+  }
+
+  // Spores
+  for (let s of spores) {
+    ctx.fillStyle = '#44ffaa';
+    ctx.shadowColor = '#44ffaa';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y + Math.sin(frame * 0.1 + s.x) * 3, s.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Mushrooms (power-up)
+  for (let m of mushrooms) {
+    ctx.fillStyle = '#ffcc00';
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 6;
+    ctx.fillRect(m.x + 6, m.y + 10, 6, 8);
+    ctx.beginPath();
+    ctx.arc(m.x + 9, m.y + 8, 9, Math.PI, 0);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Player
+  if (invincible > 0 && frame % 6 < 3) {
+    ctx.fillStyle = '#ffcc00';
+  } else {
+    ctx.fillStyle = '#88ddaa';
+  }
+  // Draw mushroom character
+  ctx.fillRect(player.x + 5, player.y + 10, 6, 8); // stem
+  ctx.beginPath();
+  ctx.arc(player.x + 8, player.y + 8, 8, Math.PI, 0); // cap
+  ctx.fill();
+  ctx.fillStyle = '#44aa77';
+  ctx.fillRect(player.x + 6, player.y + 3, 2, 2); // spots
+  ctx.fillRect(player.x + 10, player.y + 5, 2, 2);
+
+  // Particles
+  for (let p of particles) {
+    ctx.globalAlpha = p.life / 30;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, 3, 3);
+  }
+  ctx.globalAlpha = 1;
+
+  // HUD
+  ctx.fillStyle = '#88ff88';
+  ctx.font = '14px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('Score: ' + score, 10, 20);
+  ctx.textAlign = 'right';
+  ctx.fillText('Best: ' + highScore, canvas.width - 10, 20);
+  ctx.textAlign = 'left';
+
+  if (invincible > 0) {
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText('INVINCIBLE', 10, 38);
+  }
+
+  // Screens
+  if (state === 'start') {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#44ffaa';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 24px monospace';
+    ctx.fillText('SPORE RUNNER', canvas.width/2, 100);
+    ctx.fillStyle = '#88cc88';
+    ctx.font = '14px monospace';
+    ctx.fillText('Tap / Space / Up to jump', canvas.width/2, 160);
+    ctx.fillText('Collect green spores. Avoid obstacles.', canvas.width/2, 185);
+    ctx.fillText('Golden mushroom = invincibility', canvas.width/2, 210);
+    ctx.font = '12px monospace';
+    ctx.fillStyle = '#666';
+    ctx.fillText('A Memes for Trees game', canvas.width/2, 280);
+    ctx.textAlign = 'left';
+  }
+
+  if (state === 'dead') {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ff6666';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillText('GAME OVER', canvas.width/2, 120);
+    ctx.fillStyle = '#88cc88';
+    ctx.font = '16px monospace';
+    ctx.fillText('Score: ' + score, canvas.width/2, 160);
+    if (score === highScore && score > 0) {
+      ctx.fillStyle = '#ffcc00';
+      ctx.fillText('NEW HIGH SCORE!', canvas.width/2, 185);
+    }
+    ctx.fillStyle = '#88cc88';
+    ctx.font = '14px monospace';
+    ctx.fillText('Tap / Space to restart', canvas.width/2, 220);
+    ctx.textAlign = 'left';
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
